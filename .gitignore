@@ -43,6 +43,7 @@ next-env.d.ts
 .mypy_cache/
 .venv*
 **endpoint_data**
+*.ipynb_checkpoints
 
 # sqlite db
 *.db
