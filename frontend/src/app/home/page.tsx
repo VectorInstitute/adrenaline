@@ -1,5 +1,5 @@
 'use client'
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import {
   Box,
   Text,
@@ -8,52 +8,100 @@ import {
   VStack,
   useColorModeValue,
   Button,
-  Textarea,
   Input,
   Container,
   Divider,
+  Table,
+  Thead,
+  Tbody,
+  Tr,
+  Th,
+  Td,
+  useToast,
 } from '@chakra-ui/react'
 import Sidebar from '../components/sidebar'
 import { withAuth } from '../components/with-auth'
 
+interface MedicalNote {
+  note_id: string;
+  subject_id: number;
+  hadm_id: string;
+  text: string;
+}
+
 function HomePage() {
-  const [medicalNote, setMedicalNote] = useState('')
-  const [userPrompt, setUserPrompt] = useState('')
-  const [response, setResponse] = useState('')
+  const [patientId, setPatientId] = useState('')
+  const [medicalNotes, setMedicalNotes] = useState<MedicalNote[]>([])
+  const [isLoading, setIsLoading] = useState(false)
 
   const bgColor = useColorModeValue('gray.50', 'gray.900')
   const cardBgColor = useColorModeValue('white', 'gray.800')
   const textColor = useColorModeValue('gray.800', 'gray.100')
-  const accentColor = useColorModeValue('blue.500', 'blue.300')
 
-  useEffect(() => {
-    // Load a sample medical note or fetch from an API
-    const sampleNote = "Patient presents with..."
-    setMedicalNote(sampleNote)
-  }, [])
+  const toast = useToast()
 
-  const handleSubmit = async () => {
-    // Combine the medical note and user prompt
-    const combinedPrompt = `Medical Note: ${medicalNote}\n\nUser Query: ${userPrompt}`
-
-    // Send to LLM backend endpoint
-    try {
-      const result = await sendToLLM(combinedPrompt)
-      setResponse(result)
-    } catch (error) {
-      console.error('Error querying LLM:', error)
-      setResponse('An error occurred while processing your request.')
+  const loadMedicalNotes = async () => {
+    if (!patientId.trim()) {
+      toast({
+        title: "Error",
+        description: "Please enter a patient ID",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+      })
+      return
     }
-  }
 
-  const sendToLLM = async (prompt) => {
-    // Implement your LLM API call here
-    // This is a placeholder function
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve('This is a sample response from the LLM.')
-      }, 1000)
-    })
+    // Validate that patientId is a number
+    if (isNaN(Number(patientId))) {
+      toast({
+        title: "Error",
+        description: "Patient ID must be a number",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+      })
+      return
+    }
+
+    setIsLoading(true)
+    try {
+      const response = await fetch(`/api/medical_notes/${patientId}`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        },
+      })
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error('No medical notes found for this patient')
+        } else {
+          throw new Error('Failed to fetch medical notes')
+        }
+      }
+
+      const data = await response.json()
+      setMedicalNotes(data)
+      toast({
+        title: "Success",
+        description: "Medical notes loaded successfully",
+        status: "success",
+        duration: 3000,
+        isClosable: true,
+      })
+    } catch (error) {
+      console.error('Error loading medical notes:', error)
+      toast({
+        title: "Error",
+        description: error.message || "An error occurred while loading medical notes",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+      })
+      setMedicalNotes([])
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   return (
@@ -63,34 +111,48 @@ function HomePage() {
         <Container maxW="container.xl" py={8}>
           <VStack spacing={8} align="stretch">
             <Box bg={cardBgColor} p={8} borderRadius="lg" shadow="md">
-              <Heading as="h1" size="xl" color={textColor} mb={4}>Clinical LLM Dataset Curation</Heading>
-              <Text fontSize="lg" color={textColor}>Create and curate question-answer pairs for clinical LLMs.</Text>
+              <Heading as="h1" size="xl" color={textColor} mb={4}>Medical Notes Dashboard</Heading>
+              <Text fontSize="lg" color={textColor}>Load and view medical notes for a specific patient.</Text>
             </Box>
             <Divider />
             <Box bg={cardBgColor} p={8} borderRadius="lg" shadow="md">
-              <Heading as="h2" size="lg" color={textColor} mb={4}>Medical Note</Heading>
-              <Textarea
-                value={medicalNote}
-                onChange={(e) => setMedicalNote(e.target.value)}
-                placeholder="Enter or load medical note here..."
-                size="lg"
-                minHeight="200px"
-                mb={4}
-              />
-              <Heading as="h2" size="lg" color={textColor} mb={4}>User Prompt</Heading>
-              <Input
-                value={userPrompt}
-                onChange={(e) => setUserPrompt(e.target.value)}
-                placeholder="Enter your question or instruction..."
-                size="lg"
-                mb={4}
-              />
-              <Button colorScheme="blue" onClick={handleSubmit}>Submit</Button>
+              <Heading as="h2" size="lg" color={textColor} mb={4}>Load Medical Notes</Heading>
+              <Flex>
+                <Input
+                  value={patientId}
+                  onChange={(e) => setPatientId(e.target.value)}
+                  placeholder="Enter patient ID..."
+                  size="lg"
+                  mr={4}
+                />
+                <Button colorScheme="blue" onClick={loadMedicalNotes} isLoading={isLoading}>
+                  Load Notes
+                </Button>
+              </Flex>
             </Box>
-            {response && (
+            {medicalNotes.length > 0 && (
               <Box bg={cardBgColor} p={8} borderRadius="lg" shadow="md">
-                <Heading as="h2" size="lg" color={textColor} mb={4}>LLM Response</Heading>
-                <Text>{response}</Text>
+                <Heading as="h2" size="lg" color={textColor} mb={4}>Medical Notes</Heading>
+                <Table variant="simple">
+                  <Thead>
+                    <Tr>
+                      <Th>Note ID</Th>
+                      <Th>Subject ID</Th>
+                      <Th>HADM ID</Th>
+                      <Th>Text</Th>
+                    </Tr>
+                  </Thead>
+                  <Tbody>
+                    {medicalNotes.map((note) => (
+                      <Tr key={note.note_id}>
+                        <Td>{note.note_id}</Td>
+                        <Td>{note.subject_id}</Td>
+                        <Td>{note.hadm_id}</Td>
+                        <Td>{note.text.substring(0, 100)}...</Td>
+                      </Tr>
+                    ))}
+                  </Tbody>
+                </Table>
               </Box>
             )}
           </VStack>

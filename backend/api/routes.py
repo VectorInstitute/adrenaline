@@ -1,11 +1,15 @@
 """Backend API routes."""
 
+import logging
 from datetime import timedelta
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from motor.motor_asyncio import AsyncIOMotorClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.notes.data import MedicalNote
+from api.notes.db import DB_NAME, get_database
 from api.users.auth import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
     authenticate_user,
@@ -24,7 +28,70 @@ from api.users.db import get_async_session
 from api.users.utils import verify_password
 
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
 router = APIRouter()
+
+
+@router.get("/medical_notes/{patient_id}", response_model=List[MedicalNote])
+async def get_medical_notes(
+    patient_id: str,
+    db: AsyncIOMotorClient = Depends(get_database),
+    current_user: User = Depends(get_current_active_user),
+) -> List[MedicalNote]:
+    """
+    Retrieve medical notes for a specific patient.
+
+    Parameters
+    ----------
+    patient_id : str
+        The ID of the patient to fetch medical notes for.
+    db : AsyncIOMotorClient
+        The database client.
+    current_user : User
+        The authenticated user making the request.
+
+    Returns
+    -------
+    List[MedicalNote]
+        A list of medical notes for the specified patient.
+
+    Raises
+    ------
+    HTTPException
+        If no medical notes are found for the patient or if there's a database error.
+    """
+    try:
+        patient_id_int = int(patient_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid patient ID format. Must be an integer."
+        )
+
+    try:
+        collection = db[DB_NAME].medical_notes
+        cursor = collection.find({"subject_id": patient_id_int})
+        notes = await cursor.to_list(length=None)
+        
+        if not notes:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No medical notes found for this patient"
+            )
+        
+        return [MedicalNote(**note) for note in notes]
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving medical notes for patient ID {patient_id_int}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while retrieving medical notes"
+        )
 
 
 @router.post("/auth/signin")
