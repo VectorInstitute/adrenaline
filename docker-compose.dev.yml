@@ -38,10 +38,28 @@ services:
       - BACKEND_PORT=${BACKEND_PORT}
       - FRONTEND_PORT=${FRONTEND_PORT}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - MONGO_URI=mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongodb:27017
     volumes:
       - ./backend:/app
     networks:
       - app-network
+    depends_on:
+      - mongodb
+
+  mongodb:
+    image: mongo:4.4.18
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_USERNAME}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASSWORD}
+    networks:
+      - app-network
+
+volumes:
+  mongodb_data:
 
 networks:
   app-network:
