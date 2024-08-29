@@ -5,6 +5,7 @@ from datetime import timedelta
 from typing import Any, Dict, List, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import PlainTextResponse
 from httpx import AsyncClient
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -272,6 +273,52 @@ async def get_medical_note(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while retrieving the medical note",
+        ) from e
+
+
+@router.get("/medical_notes/note/{note_id}/raw", response_class=PlainTextResponse)
+async def get_raw_medical_note(
+    note_id: str,
+    db: AsyncIOMotorDatabase[Any] = Depends(get_database),  # noqa: B008
+    current_user: User = Depends(get_current_active_user),  # noqa: B008
+) -> str:
+    """
+    Retrieve the raw text of a specific medical note by its ID.
+
+    Parameters
+    ----------
+    note_id : str
+        The ID of the medical note.
+    db : AsyncIOMotorDatabase
+        The database connection.
+    current_user : User
+        The current authenticated user.
+
+    Returns
+    -------
+    str
+        The raw text of the retrieved medical note.
+
+    Raises
+    ------
+    HTTPException
+        If the note is not found or an error occurs during retrieval.
+    """
+    try:
+        collection = db.medical_notes
+        note = await collection.find_one({"note_id": note_id})
+
+        if not note:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Medical note not found"
+            )
+
+        return str(note["text"])
+    except Exception as e:
+        logger.error(f"Error retrieving raw medical note with ID {note_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while retrieving the raw medical note",
         ) from e
 
 

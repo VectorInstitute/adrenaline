@@ -21,6 +21,9 @@ import {
   StatLabel,
   StatNumber,
   StatGroup,
+  IconButton,
+  Tooltip,
+  Container,
 } from '@chakra-ui/react'
 import { useParams } from 'next/navigation'
 import { MedicalNote } from '../../types/note'
@@ -28,6 +31,7 @@ import useSWR from 'swr'
 import Sidebar from '../../components/sidebar'
 import { withAuth } from '../../components/with-auth'
 import EntityVisualization from '../../components/entity-viz'
+import { CopyIcon } from '@chakra-ui/icons'
 
 const fetcher = async (url: string) => {
   const res = await fetch(url, {
@@ -64,11 +68,13 @@ function NotePage() {
   )
   const [nerResponse, setNerResponse] = useState<NERResponse | null>(null)
   const [isExtracting, setIsExtracting] = useState(false)
+  const [isCopying, setIsCopying] = useState(false)
   const toast = useToast()
 
   const bgColor = useColorModeValue('gray.50', 'gray.900')
   const textColor = useColorModeValue('gray.800', 'gray.100')
   const cardBgColor = useColorModeValue('white', 'gray.700')
+  const noteBgColor = useColorModeValue('gray.100', 'gray.800')
 
   const extractEntities = useCallback(async () => {
     if (!noteId) return
@@ -124,6 +130,47 @@ function NotePage() {
     setNerResponse(null)
   }, [])
 
+  const copyToClipboard = useCallback(async () => {
+    if (!noteId) return
+
+    setIsCopying(true)
+
+    try {
+      const response = await fetch(`/api/medical_notes/note/${noteId}/raw`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        },
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch raw note')
+      }
+
+      const rawNote = await response.text()
+
+      await navigator.clipboard.writeText(rawNote)
+
+      toast({
+        title: "Copied",
+        description: "Raw note text copied to clipboard",
+        status: "success",
+        duration: 2000,
+        isClosable: true,
+      })
+    } catch (error) {
+      console.error('Failed to copy text: ', error)
+      toast({
+        title: "Error",
+        description: "Failed to copy text to clipboard",
+        status: "error",
+        duration: 2000,
+        isClosable: true,
+      })
+    } finally {
+      setIsCopying(false)
+    }
+  }, [noteId, toast])
+
   const entityStats = useMemo(() => {
     if (!nerResponse) return []
     const groups = nerResponse.entities.reduce((acc, entity) => {
@@ -154,12 +201,12 @@ function NotePage() {
     }
 
     return (
-      <Card bg={cardBgColor}>
+      <Card bg={cardBgColor} shadow="md">
         <CardHeader>
           <Heading size="md">Medical Note Details</Heading>
         </CardHeader>
         <CardBody>
-          <VStack align="stretch" spacing={4}>
+          <VStack align="stretch" spacing={6}>
             <Flex wrap="wrap" gap={2}>
               <Badge colorScheme="blue">Note ID: {note.note_id}</Badge>
               <Badge colorScheme="green">Subject ID: {note.subject_id}</Badge>
@@ -195,13 +242,27 @@ function NotePage() {
                 ))}
               </StatGroup>
             )}
-            <Box>
+            <Box position="relative" bg={noteBgColor} p={4} borderRadius="md" shadow="sm">
+              <Tooltip label="Copy raw note to clipboard">
+                <IconButton
+                  aria-label="Copy raw note to clipboard"
+                  icon={<CopyIcon />}
+                  onClick={copyToClipboard}
+                  isLoading={isCopying}
+                  size="md"
+                  position="absolute"
+                  top={2}
+                  right={2}
+                  zIndex={1}
+                  colorScheme="teal"
+                />
+              </Tooltip>
               {isExtracting ? (
                 <Skeleton height="200px" />
               ) : nerResponse ? (
                 <EntityVisualization text={nerResponse.text} entities={nerResponse.entities} />
               ) : (
-                <Text whiteSpace="pre-wrap">{note.text}</Text>
+                <Text whiteSpace="pre-wrap" fontSize="sm">{note.text}</Text>
               )}
             </Box>
           </VStack>
@@ -214,7 +275,9 @@ function NotePage() {
     <Flex direction={{ base: 'column', md: 'row' }} minHeight="100vh" bg={bgColor} color={textColor}>
       <Sidebar />
       <Box flex={1} p={4} ml={{ base: 0, md: 60 }} transition="margin-left 0.3s" overflowX="hidden">
-        {renderContent()}
+        <Container maxW="container.xl">
+          {renderContent()}
+        </Container>
       </Box>
     </Flex>
   )
