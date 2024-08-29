@@ -1,11 +1,16 @@
 """Backend API routes."""
 
+import logging
 from datetime import timedelta
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from httpx import AsyncClient
+from motor.motor_asyncio import AsyncIOMotorDatabase
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.notes.data import Entity, MedicalNote, NERResponse
+from api.notes.db import get_database
 from api.users.auth import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
     authenticate_user,
@@ -24,7 +29,250 @@ from api.users.db import get_async_session
 from api.users.utils import verify_password
 
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
 router = APIRouter()
+
+
+def preprocess_text(text: str) -> Tuple[str, List[int]]:
+    """
+    Preprocess the input text by removing non-printable characters.
+
+    Parameters
+    ----------
+    text : str
+        The input text to preprocess.
+
+    Returns
+    -------
+    Tuple[str, List[int]]
+        A tuple with the preprocessed text and a list of removed character indices.
+    """
+    preprocessed = []
+    removed_indices = []
+    for i, char in enumerate(text):
+        if char.isprintable() or char.isspace():
+            preprocessed.append(char)
+        else:
+            removed_indices.append(i)
+    return "".join(preprocessed), removed_indices
+
+
+def adjust_entity_positions(
+    entities: List[Entity], removed_indices: List[int]
+) -> List[Entity]:
+    """
+    Adjust entity positions based on removed character indices.
+
+    Parameters
+    ----------
+    entities : List[Entity]
+        The list of entities to adjust.
+    removed_indices : List[int]
+        The list of indices of removed characters.
+
+    Returns
+    -------
+    List[Entity]
+        The list of entities with adjusted positions.
+    """
+    adjusted_entities = []
+    for entity in entities:
+        start = entity.start + sum(1 for i in removed_indices if i < entity.start)
+        end = entity.end + sum(1 for i in removed_indices if i < entity.end)
+        adjusted_entities.append(
+            Entity(
+                entity_group=entity.entity_group,
+                word=entity.word,
+                start=start,
+                end=end,
+                score=entity.score,
+            )
+        )
+    return adjusted_entities
+
+
+@router.post("/extract_entities/{note_id}", response_model=NERResponse)
+async def extract_entities(
+    note_id: str,
+    db: AsyncIOMotorDatabase[Any] = Depends(get_database),  # noqa: B008
+    current_user: User = Depends(get_current_active_user),  # noqa: B008
+) -> NERResponse:
+    """
+    Extract entities from a medical note.
+
+    Parameters
+    ----------
+    note_id : str
+        The ID of the medical note.
+    db : AsyncIOMotorDatabase
+        The database connection.
+    current_user : User
+        The current authenticated user.
+
+    Returns
+    -------
+    NERResponse
+        The response containing the extracted entities.
+
+    Raises
+    ------
+    HTTPException
+        If the note is not found or an error occurs during processing.
+    """
+    try:
+        collection = db.medical_notes
+        note = await collection.find_one({"note_id": note_id})
+
+        if not note:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Medical note not found"
+            )
+
+        original_text = note["text"]
+        preprocessed_text, removed_indices = preprocess_text(original_text)
+
+        ner_url = "http://cyclops.cluster.local:8003/ner"
+        async with AsyncClient() as client:
+            response = await client.post(
+                ner_url,
+                json={"text": preprocessed_text},
+                timeout=60.0,
+            )
+            response.raise_for_status()
+            ner_result = response.json()
+
+            if "entities" not in ner_result:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="NER endpoint returned unexpected response",
+                )
+
+            preprocessed_entities = [
+                Entity(**entity) for entity in ner_result["entities"]
+            ]
+            adjusted_entities = adjust_entity_positions(
+                preprocessed_entities, removed_indices
+            )
+
+        logger.info(f"Extracted {len(adjusted_entities)} entities from note {note_id}")
+        return NERResponse(
+            note_id=note_id, text=original_text, entities=adjusted_entities
+        )
+
+    except Exception as e:
+        logger.error(f"Unexpected error in extract_entities: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An unexpected error occurred: {str(e)}",
+        ) from e
+
+
+@router.get("/medical_notes/{patient_id}", response_model=List[MedicalNote])
+async def get_medical_notes(
+    patient_id: str,
+    db: AsyncIOMotorDatabase[Any] = Depends(get_database),  # noqa: B008
+    current_user: User = Depends(get_current_active_user),  # noqa: B008
+) -> List[MedicalNote]:
+    """
+    Retrieve medical notes for a specific patient.
+
+    Parameters
+    ----------
+    patient_id : str
+        The ID of the patient.
+    db : AsyncIOMotorDatabase
+        The database connection.
+    current_user : User
+        The current authenticated user.
+
+    Returns
+    -------
+    List[MedicalNote]
+        A list of medical notes for the patient.
+
+    Raises
+    ------
+    HTTPException
+        If the patient ID is invalid or an error occurs during retrieval.
+    """
+    try:
+        patient_id_int = int(patient_id)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid patient ID format. Must be an integer.",
+        ) from e
+
+    try:
+        collection = db.medical_notes
+        cursor = collection.find({"subject_id": patient_id_int})
+        notes = await cursor.to_list(length=None)
+
+        if not notes:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No medical notes found for this patient",
+            )
+
+        return [MedicalNote(**note) for note in notes]
+    except Exception as e:
+        logger.error(
+            f"Error retrieving medical notes for patient ID {patient_id_int}: {str(e)}"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while retrieving medical notes",
+        ) from e
+
+
+@router.get("/medical_notes/note/{note_id}", response_model=MedicalNote)
+async def get_medical_note(
+    note_id: str,
+    db: AsyncIOMotorDatabase[Any] = Depends(get_database),  # noqa: B008
+    current_user: User = Depends(get_current_active_user),  # noqa: B008
+) -> MedicalNote:
+    """
+    Retrieve a specific medical note by its ID.
+
+    Parameters
+    ----------
+    note_id : str
+        The ID of the medical note.
+    db : AsyncIOMotorDatabase
+        The database connection.
+    current_user : User
+        The current authenticated user.
+
+    Returns
+    -------
+    MedicalNote
+        The retrieved medical note.
+
+    Raises
+    ------
+    HTTPException
+        If the note is not found or an error occurs during retrieval.
+    """
+    try:
+        collection = db.medical_notes
+        note = await collection.find_one({"note_id": note_id})
+
+        if not note:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Medical note not found"
+            )
+
+        return MedicalNote(**note)
+    except Exception as e:
+        logger.error(f"Error retrieving medical note with ID {note_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while retrieving the medical note",
+        ) from e
 
 
 @router.post("/auth/signin")

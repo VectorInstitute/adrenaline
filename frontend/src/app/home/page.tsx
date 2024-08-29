@@ -1,5 +1,6 @@
 'use client'
-import React, { useEffect, useState, useCallback } from 'react'
+
+import React, { useState } from 'react'
 import {
   Box,
   Text,
@@ -8,148 +9,169 @@ import {
   VStack,
   useColorModeValue,
   Button,
-  Center,
-  Spinner,
+  Input,
   Container,
   Divider,
-  Icon,
-  Badge,
-  Tooltip,
-  SimpleGrid,
-  Card,
-  CardBody,
+  Table,
+  Thead,
+  Tbody,
+  Tr,
+  Th,
+  Td,
+  useToast,
+  Skeleton,
 } from '@chakra-ui/react'
 import { useRouter } from 'next/navigation'
 import Sidebar from '../components/sidebar'
-import { useModelContext } from '../context/model'
-import Link from 'next/link'
-import { FiMonitor, FiAlertCircle, FiCheckCircle, FiBox } from 'react-icons/fi'
-import { debounce } from 'lodash'
 import { withAuth } from '../components/with-auth'
+import { MedicalNote } from '../types/note'
 
 function HomePage() {
-  const router = useRouter()
-  const { models, fetchModels, isLoading } = useModelContext()
-  const [error, setError] = useState<string | null>(null)
-  const [isInitialLoadComplete, setIsInitialLoadComplete] = useState(false)
+  const [patientId, setPatientId] = useState('')
+  const [medicalNotes, setMedicalNotes] = useState<MedicalNote[]>([])
+  const [isLoading, setIsLoading] = useState(false)
 
+  const router = useRouter()
   const bgColor = useColorModeValue('gray.50', 'gray.900')
   const cardBgColor = useColorModeValue('white', 'gray.800')
   const textColor = useColorModeValue('gray.800', 'gray.100')
-  const accentColor = useColorModeValue('blue.500', 'blue.300')
-  const dividerColor = useColorModeValue('gray.200', 'gray.700')
-  const noModelsTextColor = useColorModeValue('gray.600', 'gray.400')
 
-  const debouncedFetchModels = useCallback(() => {
-    const fetchModelsDebounced = debounce(async () => {
-      try {
-        await fetchModels()
-        setError(null)
-      } catch (error) {
-        console.error('Failed to fetch models:', error)
-        setError('Failed to load models. Please try again later.')
-      } finally {
-        setIsInitialLoadComplete(true)
+  const toast = useToast()
+
+  const loadMedicalNotes = async () => {
+    if (!patientId.trim()) {
+      toast({
+        title: "Error",
+        description: "Please enter a patient ID",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+      })
+      return
+    }
+
+    if (isNaN(Number(patientId))) {
+      toast({
+        title: "Error",
+        description: "Patient ID must be a number",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+      })
+      return
+    }
+
+    setIsLoading(true)
+    try {
+      const response = await fetch(`/api/medical_notes/${patientId}`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        },
+      })
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error('No medical notes found for this patient')
+        } else {
+          throw new Error('Failed to fetch medical notes')
+        }
       }
-    }, 300)
 
-    fetchModelsDebounced()
-
-    return () => {
-      fetchModelsDebounced.cancel()
+      const data = await response.json()
+      setMedicalNotes(data)
+      toast({
+        title: "Success",
+        description: "Medical notes loaded successfully",
+        status: "success",
+        duration: 3000,
+        isClosable: true,
+      })
+    } catch (error) {
+      console.error('Error loading medical notes:', error)
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "An error occurred while loading medical notes",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+      })
+      setMedicalNotes([])
+    } finally {
+      setIsLoading(false)
     }
-  }, [fetchModels])
+  }
 
-  useEffect(() => {
-    const cleanup = debouncedFetchModels()
-    return cleanup
-  }, [debouncedFetchModels])
-
-  const getStatusColor = (status: string) => status === 'No warnings' ? 'green' : 'red'
-  const getStatusIcon = (status: string) => status === 'No warnings' ? FiCheckCircle : FiAlertCircle
-
-  const renderContent = () => {
-    if (!isInitialLoadComplete || isLoading) {
-      return (
-        <Center h="50vh" flexDirection="column">
-          <Spinner size="xl" color={accentColor} mb={4} />
-          <Text color={textColor}>Loading models...</Text>
-        </Center>
-      )
-    }
-
-    if (error) {
-      return (
-        <Center flexDirection="column" p={8} bg={cardBgColor} borderRadius="lg" shadow="md">
-          <Icon as={FiAlertCircle} boxSize={12} color="red.500" mb={4} />
-          <Text fontSize="xl" fontWeight="bold" mb={4} textAlign="center">Error</Text>
-          <Text fontSize="md" mb={6} textAlign="center" color={noModelsTextColor}>{error}</Text>
-          <Button colorScheme="blue" onClick={debouncedFetchModels}>Retry</Button>
-        </Center>
-      )
-    }
-
-    const monitoredModels = models.filter(model => model.endpoints.length > 0)
-    if (monitoredModels.length === 0) {
-      return (
-        <Center flexDirection="column" p={8} bg={cardBgColor} borderRadius="lg" shadow="md">
-          <Icon as={FiBox} boxSize={12} color={accentColor} mb={4} />
-          <Text fontSize="xl" fontWeight="bold" mb={4} textAlign="center">No Models Configured</Text>
-          <Text fontSize="md" mb={6} textAlign="center" color={noModelsTextColor}>
-            To start monitoring a model, you need to configure its evaluation parameters.
-          </Text>
-          <Link href="/configure" passHref>
-            <Button as="a" colorScheme="blue" size="lg" leftIcon={<FiMonitor />}>Configure a New Model</Button>
-          </Link>
-        </Center>
-      )
-    }
-
-    return (
-      <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={6}>
-        {monitoredModels.map((model) => (
-          <Card
-            key={model.id}
-            bg={cardBgColor}
-            shadow="md"
-            _hover={{ shadow: 'lg', transform: 'translateY(-2px)' }}
-            transition="all 0.3s"
-            cursor="pointer"
-            onClick={() => router.push(`/model/${model.id}`)}
-          >
-            <CardBody>
-              <Flex justify="space-between" align="center" mb={3}>
-                <VStack align="start" spacing={0}>
-                  <Heading size="md" color={textColor}>{model.basic_info.name}</Heading>
-                  <Text fontSize="sm" color={noModelsTextColor}>Version: {model.basic_info.version}</Text>
-                </VStack>
-                <Tooltip label={model.overall_status} placement="top">
-                  <Badge colorScheme={getStatusColor(model.overall_status)} p={2} borderRadius="full">
-                    <Icon as={getStatusIcon(model.overall_status)} />
-                  </Badge>
-                </Tooltip>
-              </Flex>
-            </CardBody>
-          </Card>
-        ))}
-      </SimpleGrid>
-    )
+  const handleNoteClick = (noteId: string) => {
+    router.push(`/note/${noteId}`)
   }
 
   return (
     <Flex minHeight="100vh" bg={bgColor}>
       <Sidebar />
-      <Box flex={1} ml={{ base: 0, md: 60 }} transition="margin-left 0.3s">
-        <Container maxW="container.xl" py={8}>
+      <Box flex={1} ml={{ base: 0, md: 60 }} transition="margin-left 0.3s" p={4}>
+        <Container maxW="container.xl">
           <VStack spacing={8} align="stretch">
             <Box bg={cardBgColor} p={8} borderRadius="lg" shadow="md">
-              <Heading as="h1" size="xl" color={textColor} mb={4}>AI Model Monitoring Hub</Heading>
-              <Text fontSize="lg" color={noModelsTextColor}>Monitor your clinical AI models in real-time.</Text>
+              <Heading as="h1" size="xl" color={textColor} mb={4}>Medical Notes Dashboard</Heading>
+              <Text fontSize="lg" color={textColor}>Load and view medical notes for a specific patient.</Text>
             </Box>
-            <Divider borderColor={dividerColor} />
-            <Box>
-              <Heading as="h2" size="lg" color={textColor} mb={6}>Monitored Models</Heading>
-              {renderContent()}
+            <Divider />
+            <Box bg={cardBgColor} p={8} borderRadius="lg" shadow="md">
+              <Heading as="h2" size="lg" color={textColor} mb={4}>Load Medical Notes</Heading>
+              <Flex direction={{ base: 'column', md: 'row' }}>
+                <Input
+                  value={patientId}
+                  onChange={(e) => setPatientId(e.target.value)}
+                  placeholder="Enter patient ID..."
+                  size="lg"
+                  mb={{ base: 4, md: 0 }}
+                  mr={{ md: 4 }}
+                />
+                <Button colorScheme="blue" onClick={loadMedicalNotes} isLoading={isLoading} size="lg">
+                  Load Notes
+                </Button>
+              </Flex>
+            </Box>
+            <Box bg={cardBgColor} p={8} borderRadius="lg" shadow="md">
+              <Heading as="h2" size="lg" color={textColor} mb={4}>Medical Notes</Heading>
+              {isLoading ? (
+                <VStack spacing={4}>
+                  {[...Array(5)].map((_, index) => (
+                    <Skeleton key={index} height="60px" width="100%" />
+                  ))}
+                </VStack>
+              ) : medicalNotes.length > 0 ? (
+                <Box overflowX="auto">
+                  <Table variant="simple">
+                    <Thead>
+                      <Tr>
+                        <Th>Note ID</Th>
+                        <Th>Subject ID</Th>
+                        <Th>HADM ID</Th>
+                        <Th>Text Preview</Th>
+                        <Th>Action</Th>
+                      </Tr>
+                    </Thead>
+                    <Tbody>
+                      {medicalNotes.map((note) => (
+                        <Tr key={note.note_id}>
+                          <Td>{note.note_id}</Td>
+                          <Td>{note.subject_id}</Td>
+                          <Td>{note.hadm_id}</Td>
+                          <Td>{note.text.substring(0, 50)}...</Td>
+                          <Td>
+                            <Button size="sm" onClick={() => handleNoteClick(note.note_id)}>
+                              View Full Note
+                            </Button>
+                          </Td>
+                        </Tr>
+                      ))}
+                    </Tbody>
+                  </Table>
+                </Box>
+              ) : (
+                <Text>No medical notes available. Please load notes for a patient.</Text>
+              )}
             </Box>
           </VStack>
         </Container>

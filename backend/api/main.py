@@ -1,16 +1,19 @@
 """Backend server for the app."""
 
+import logging
 import os
 from typing import Dict
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from api.notes.db import check_database_connection
 from api.routes import router as api_router
 from api.users.crud import create_initial_admin
 from api.users.db import get_async_session, init_db
 
 
+logger = logging.getLogger("uvicorn")
 app = FastAPI()
 frontend_port = os.getenv("FRONTEND_PORT", None)
 if not frontend_port:
@@ -33,9 +36,14 @@ async def startup_event() -> None:
     This function is called when the FastAPI application starts up. It initializes
     the database and creates an initial admin user if one doesn't already exist.
     """
-    await init_db()
-    async for session in get_async_session():
-        await create_initial_admin(session)
+    try:
+        await check_database_connection()
+        await init_db()
+        async for session in get_async_session():
+            await create_initial_admin(session)
+    except Exception as e:
+        logger.error(f"Startup failed: {str(e)}")
+        raise
 
 
 @app.get("/")

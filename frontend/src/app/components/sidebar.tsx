@@ -61,10 +61,10 @@ interface SidebarContentProps {
 }
 
 const SidebarContent: React.FC<SidebarContentProps> = ({ onClose, isCollapsed, toggleSidebar, ...rest }) => {
-  const bgColor = useColorModeValue('#b0caf5', '#1e3a5f')
-  const textColor = useColorModeValue('#1e3a5f', '#e0e0e0')
-  const borderColor = useColorModeValue('#8eb8f2', '#2c5282')
-  const toggleBtnBgColor = useColorModeValue('#8eb8f2', '#2c5282')
+  const bgColor = useColorModeValue('#c5b8e8', '#2a1e5f')
+  const textColor = useColorModeValue('#2a1e5f', '#e6e0f0')
+  const borderColor = useColorModeValue('#a596d9', '#3c2b8c')
+  const toggleBtnBgColor = useColorModeValue('#a596d9', '#3c2b8c')
   const [fullLogoOpacity, setFullLogoOpacity] = useState(1)
   const [iconLogoOpacity, setIconLogoOpacity] = useState(0)
 
@@ -115,11 +115,11 @@ const SidebarContent: React.FC<SidebarContentProps> = ({ onClose, isCollapsed, t
               justifyContent="center"
             >
               <Image
-                src="/images/cyclops_logo-dark.png"
-                alt="Clinical AI Monitor"
+                src="/images/odyssey_logo.png"
+                alt="adrenaline"
                 objectFit="contain"
-                width="100%"
-                height="100%"
+                width="160%"
+                height="160%"
                 loading="eager"
               />
             </Box>
@@ -136,8 +136,8 @@ const SidebarContent: React.FC<SidebarContentProps> = ({ onClose, isCollapsed, t
               justifyContent="center"
             >
               <Image
-                src="/images/cyclops_icon.png"
-                alt="Clinical AI Monitor"
+                src="/images/odyssey_logo.png"
+                alt="adrenaline"
                 objectFit="contain"
                 width="40px"
                 height="40px"
@@ -166,7 +166,7 @@ const SidebarContent: React.FC<SidebarContentProps> = ({ onClose, isCollapsed, t
                 mb={2}
               />
               <Text fontSize="xs" color={textColor} textAlign="center" mt={2} mb={4}>
-                © {new Date().getFullYear()} Clinical AI Monitor. All rights reserved.
+                © {new Date().getFullYear()} adrenaline. All rights reserved.
               </Text>
             </>
           )}
@@ -209,9 +209,6 @@ const NavItems: React.FC<NavItemsProps> = ({ textColor, isCollapsed }) => {
       <NavItem icon={FiHome} href="/home" textColor={textColor} isCollapsed={isCollapsed}>
         Dashboard
       </NavItem>
-      <NavItem icon={FiSettings} href="/configure" textColor={textColor} isCollapsed={isCollapsed}>
-        Configure
-      </NavItem>
       <NavItem
         icon={FiLogOut}
         href="#"
@@ -229,9 +226,9 @@ const UserSection: React.FC<{ isCollapsed: boolean; textColor: string }> = ({ is
   const { user } = useAuth();
   const router = useRouter();
 
-  const bgColor = useColorModeValue('#B0CAF5', '#1E3A5F');
-  const iconColor = useColorModeValue('#1E3A5F', '#B0CAF5');
-  const hoverBgColor = useColorModeValue('#8EB8F2', '#2C5282');
+  const bgColor = useColorModeValue('#c5b8e8', '#2a1e5f');
+  const iconColor = useColorModeValue('#2a1e5f', '#c5b8e8');
+  const hoverBgColor = useColorModeValue('#a596d9', '#3c2b8c');
 
   const handleClick = () => {
     router.push('/profile');
@@ -303,8 +300,8 @@ interface NavItemProps {
 }
 
 const NavItem: React.FC<NavItemProps> = ({ icon, children, href, textColor, isCollapsed, onClick }) => {
-  const bgHover = useColorModeValue('#8eb8f2', '#2c5282')
-  const activeColor = useColorModeValue('#1e3a5f', '#ffffff')
+  const bgHover = useColorModeValue('#a596d9', '#3c2b8c')
+  const activeColor = useColorModeValue('#2a1e5f', '#ffffff')
 
   return (
     <Tooltip label={isCollapsed ? children : ''} placement="right" hasArrow>
@@ -354,8 +351,8 @@ interface MobileNavProps {
 }
 
 const MobileNav: React.FC<MobileNavProps> = ({ onOpen, ...rest }) => {
-  const bgColor = useColorModeValue('#b0caf5', '#1e3a5f')
-  const borderColor = useColorModeValue('#8eb8f2', '#2c5282')
+  const bgColor = useColorModeValue('#c5b8e8', '#2a1e5f')
+  const borderColor = useColorModeValue('#a596d9', '#3c2b8c')
 
   return (
     <Flex
@@ -377,8 +374,8 @@ const MobileNav: React.FC<MobileNavProps> = ({ onOpen, ...rest }) => {
       />
 
       <Image
-        src="/images/cyclops_logo-dark.png"
-        alt="Clinical AI Monitor"
+        src="/images/odyssey_logo.png"
+        alt="adrenaline"
         maxW="150px"
         h="auto"
         ml="4"

@@ -72,7 +72,13 @@ export default function LoginPage() {
     <Container maxWidth="md" centerContent>
       <Box width="full" maxWidth="400px" mt={8} p={6} borderRadius="md" boxShadow="lg" bg="white">
         <Flex direction="column" align="center" mb={6}>
-          <Logo src="/images/cyclops_logo-dark.png" alt="Cyclops Logo" width={240} height={240} />
+          <Logo
+            src="/images/odyssey_logo.gif"
+            alt="Cyclops Logo"
+            width={240}
+            height={240}
+            priority={true}
+          />
           <Heading as="h1" size="xl" mt={4} mb={6}>Login</Heading>
         </Flex>
         <form onSubmit={handleLogin}>
@@ -114,7 +120,12 @@ export default function LoginPage() {
           </VStack>
         </form>
         <Flex justify="center" mt={8}>
-          <Logo src="/images/vector_logo.png" alt="Vector Institute Logo" width={120} height={120} />
+          <Logo
+            src="/images/vector_logo.png"
+            alt="Vector Institute Logo"
+            width={120}
+            height={120}
+          />
         </Flex>
       </Box>
     </Container>
