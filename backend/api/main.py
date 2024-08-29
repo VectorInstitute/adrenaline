@@ -1,5 +1,6 @@
 """Backend server for the app."""
 
+import logging
 import os
 from typing import Dict
 
@@ -12,6 +13,7 @@ from api.users.crud import create_initial_admin
 from api.users.db import get_async_session, init_db
 
 
+logger = logging.getLogger("uvicorn")
 app = FastAPI()
 frontend_port = os.getenv("FRONTEND_PORT", None)
 if not frontend_port:

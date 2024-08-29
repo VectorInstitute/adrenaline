@@ -1,9 +1,13 @@
 import asyncio
+from typing import Any
 
 import cycquery.ops as qo
 from cycquery import MIMICIVQuerier
-from motor.motor_asyncio import AsyncIOMotorClient
-
+from motor.motor_asyncio import (
+    AsyncIOMotorClient,
+    AsyncIOMotorDatabase,
+    AsyncIOMotorCollection,
+)
 
 querier = MIMICIVQuerier(
     dbms="postgresql",
@@ -20,10 +24,10 @@ ops = qo.Sequential(qo.DropEmpty("text"), qo.DropNulls("text"))
 notes = querier.mimiciv_note.discharge().ops(ops).run(limit=100)
 
 
-async def load_medical_notes(mongo_uri):
-    client = AsyncIOMotorClient(mongo_uri)
-    db = client.medical_db
-    collection = db.medical_notes
+async def load_medical_notes(mongo_uri: str) -> None:
+    client: AsyncIOMotorClient[Any] = AsyncIOMotorClient(mongo_uri)
+    db: AsyncIOMotorDatabase[Any] = client.medical_db
+    collection: AsyncIOMotorCollection[Any] = db.medical_notes
 
     for _, note in notes.iterrows():
         await collection.update_one(
@@ -41,7 +45,7 @@ async def load_medical_notes(mongo_uri):
     print(f"Loaded {len(notes)} medical notes into the database.")
 
 
-async def main():
+async def main() -> None:
     mongo_uri = "mongodb://root:password@cyclops.cluster.local:27017"
     await load_medical_notes(mongo_uri)
 

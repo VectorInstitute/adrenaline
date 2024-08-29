@@ -1,4 +1,5 @@
 'use client'
+
 import React, { useState } from 'react'
 import {
   Box,
@@ -18,22 +19,19 @@ import {
   Th,
   Td,
   useToast,
+  Skeleton,
 } from '@chakra-ui/react'
+import { useRouter } from 'next/navigation'
 import Sidebar from '../components/sidebar'
 import { withAuth } from '../components/with-auth'
-
-interface MedicalNote {
-  note_id: string;
-  subject_id: number;
-  hadm_id: string;
-  text: string;
-}
+import { MedicalNote } from '../types/note'
 
 function HomePage() {
   const [patientId, setPatientId] = useState('')
   const [medicalNotes, setMedicalNotes] = useState<MedicalNote[]>([])
   const [isLoading, setIsLoading] = useState(false)
 
+  const router = useRouter()
   const bgColor = useColorModeValue('gray.50', 'gray.900')
   const cardBgColor = useColorModeValue('white', 'gray.800')
   const textColor = useColorModeValue('gray.800', 'gray.100')
@@ -52,7 +50,6 @@ function HomePage() {
       return
     }
 
-    // Validate that patientId is a number
     if (isNaN(Number(patientId))) {
       toast({
         title: "Error",
@@ -93,7 +90,7 @@ function HomePage() {
       console.error('Error loading medical notes:', error)
       toast({
         title: "Error",
-        description: error.message || "An error occurred while loading medical notes",
+        description: error instanceof Error ? error.message : "An error occurred while loading medical notes",
         status: "error",
         duration: 3000,
         isClosable: true,
@@ -104,11 +101,15 @@ function HomePage() {
     }
   }
 
+  const handleNoteClick = (noteId: string) => {
+    router.push(`/note/${noteId}`)
+  }
+
   return (
     <Flex minHeight="100vh" bg={bgColor}>
       <Sidebar />
-      <Box flex={1} ml={{ base: 0, md: 60 }} transition="margin-left 0.3s">
-        <Container maxW="container.xl" py={8}>
+      <Box flex={1} ml={{ base: 0, md: 60 }} transition="margin-left 0.3s" p={4}>
+        <Container maxW="container.xl">
           <VStack spacing={8} align="stretch">
             <Box bg={cardBgColor} p={8} borderRadius="lg" shadow="md">
               <Heading as="h1" size="xl" color={textColor} mb={4}>Medical Notes Dashboard</Heading>
@@ -117,44 +118,61 @@ function HomePage() {
             <Divider />
             <Box bg={cardBgColor} p={8} borderRadius="lg" shadow="md">
               <Heading as="h2" size="lg" color={textColor} mb={4}>Load Medical Notes</Heading>
-              <Flex>
+              <Flex direction={{ base: 'column', md: 'row' }}>
                 <Input
                   value={patientId}
                   onChange={(e) => setPatientId(e.target.value)}
                   placeholder="Enter patient ID..."
                   size="lg"
-                  mr={4}
+                  mb={{ base: 4, md: 0 }}
+                  mr={{ md: 4 }}
                 />
-                <Button colorScheme="blue" onClick={loadMedicalNotes} isLoading={isLoading}>
+                <Button colorScheme="blue" onClick={loadMedicalNotes} isLoading={isLoading} size="lg">
                   Load Notes
                 </Button>
               </Flex>
             </Box>
-            {medicalNotes.length > 0 && (
-              <Box bg={cardBgColor} p={8} borderRadius="lg" shadow="md">
-                <Heading as="h2" size="lg" color={textColor} mb={4}>Medical Notes</Heading>
-                <Table variant="simple">
-                  <Thead>
-                    <Tr>
-                      <Th>Note ID</Th>
-                      <Th>Subject ID</Th>
-                      <Th>HADM ID</Th>
-                      <Th>Text</Th>
-                    </Tr>
-                  </Thead>
-                  <Tbody>
-                    {medicalNotes.map((note) => (
-                      <Tr key={note.note_id}>
-                        <Td>{note.note_id}</Td>
-                        <Td>{note.subject_id}</Td>
-                        <Td>{note.hadm_id}</Td>
-                        <Td>{note.text.substring(0, 100)}...</Td>
+            <Box bg={cardBgColor} p={8} borderRadius="lg" shadow="md">
+              <Heading as="h2" size="lg" color={textColor} mb={4}>Medical Notes</Heading>
+              {isLoading ? (
+                <VStack spacing={4}>
+                  {[...Array(5)].map((_, index) => (
+                    <Skeleton key={index} height="60px" width="100%" />
+                  ))}
+                </VStack>
+              ) : medicalNotes.length > 0 ? (
+                <Box overflowX="auto">
+                  <Table variant="simple">
+                    <Thead>
+                      <Tr>
+                        <Th>Note ID</Th>
+                        <Th>Subject ID</Th>
+                        <Th>HADM ID</Th>
+                        <Th>Text Preview</Th>
+                        <Th>Action</Th>
                       </Tr>
-                    ))}
-                  </Tbody>
-                </Table>
-              </Box>
-            )}
+                    </Thead>
+                    <Tbody>
+                      {medicalNotes.map((note) => (
+                        <Tr key={note.note_id}>
+                          <Td>{note.note_id}</Td>
+                          <Td>{note.subject_id}</Td>
+                          <Td>{note.hadm_id}</Td>
+                          <Td>{note.text.substring(0, 50)}...</Td>
+                          <Td>
+                            <Button size="sm" onClick={() => handleNoteClick(note.note_id)}>
+                              View Full Note
+                            </Button>
+                          </Td>
+                        </Tr>
+                      ))}
+                    </Tbody>
+                  </Table>
+                </Box>
+              ) : (
+                <Text>No medical notes available. Please load notes for a patient.</Text>
+              )}
+            </Box>
           </VStack>
         </Container>
       </Box>
