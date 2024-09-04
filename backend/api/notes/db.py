@@ -16,7 +16,7 @@ MONGO_PASSWORD = os.getenv("MONGO_PASSWORD")
 MONGO_HOST = os.getenv("MONGO_HOST", "mongodb")
 MONGO_PORT = os.getenv("MONGO_PORT", "27017")
 MONGO_URL = f"mongodb://{MONGO_USERNAME}:{MONGO_PASSWORD}@{MONGO_HOST}:{MONGO_PORT}"
-DB_NAME = "medical_db"
+DB_NAME = "clinical_notes"
 
 
 async def get_database() -> AsyncIOMotorDatabase[Any]:
@@ -37,8 +37,11 @@ async def get_database() -> AsyncIOMotorDatabase[Any]:
     try:
         # Check the connection
         await client.admin.command("ismaster")
-        logger.info("Successfully connected to the database")
-        return client[DB_NAME]
+        db = client[DB_NAME]
+        logger.info(f"Successfully connected to the database: {DB_NAME}")
+        collections = await db.list_collection_names()
+        logger.info(f"Available collections: {collections}")
+        return db
     except Exception as e:
         logger.error(f"Unable to connect to the database: {str(e)}")
         raise ConnectionError(f"Database connection failed: {str(e)}") from e
@@ -58,12 +61,14 @@ async def check_database_connection() -> None:
         await client.admin.command("ismaster")
         db = client[DB_NAME]
         collections = await db.list_collection_names()
-        if "medical_notes" in collections:
+        if "mimiciv_discharge_notes" in collections:
             logger.info(
-                f"Database connection check passed. Found 'medical_notes' collection in {DB_NAME}"
+                f"Database connection check passed. Found 'mimiciv_discharge_notes' collection in {DB_NAME}"
             )
         else:
-            logger.warning(f"'medical_notes' collection not found in {DB_NAME}")
+            logger.warning(
+                f"'mimiciv_discharge_notes' collection not found in {DB_NAME}"
+            )
         logger.info("Database connection check passed")
     except Exception as e:
         logger.error(f"Database connection check failed: {str(e)}")

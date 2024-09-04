@@ -23,6 +23,25 @@ services:
     networks:
       - app-network
 
+  clinical-ner-service-dev:
+    build:
+      context: ./backend/clinical_ner_service
+      dockerfile: Dockerfile.dev
+      args:
+        - NER_SERVICE_PORT=${NER_SERVICE_PORT}
+    image: vectorinstitute/adrenaline:clinical-ner-service-dev-${BUILD_ID}
+    env_file: .env.development
+    ports:
+      - "${NER_SERVICE_PORT}:${NER_SERVICE_PORT}"
+    environment:
+      - NER_SERVICE_PORT=${NER_SERVICE_PORT}
+      - SELECTED_MEDCAT_MODEL=${SELECTED_MEDCAT_MODEL:-umls_sm_pt2ch_533bab5115c6c2d6.zip}
+    volumes:
+      - ./backend/clinical_ner_service:/app
+      - /mnt/data/medcat:/app/medcat_models:ro
+    networks:
+      - app-network
+
   backend-dev:
     build:
       context: ./backend
@@ -30,6 +49,7 @@ services:
       args:
         - BACKEND_PORT=${BACKEND_PORT}
         - FRONTEND_PORT=${FRONTEND_PORT}
+        - NER_SERVICE_PORT=${NER_SERVICE_PORT}
     image: vectorinstitute/adrenaline:backend-dev-${BUILD_ID}
     env_file: .env.development
     ports:
@@ -38,6 +58,7 @@ services:
       - BACKEND_PORT=${BACKEND_PORT}
       - FRONTEND_PORT=${FRONTEND_PORT}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - NER_SERVICE_PORT=${NER_SERVICE_PORT}
       - MONGO_USERNAME=${MONGO_USERNAME}
       - MONGO_PASSWORD=${MONGO_PASSWORD}
       - MONGO_HOST=mongodb
