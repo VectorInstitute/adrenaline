@@ -28,7 +28,7 @@ medcat = "^1.13.0"
 optional = true
 
 [tool.poetry.group.jupyterlab.dependencies]
-jupyterlab = "^4.2.4"
+jupyterlab = "^4.2.5"
 
 [tool.poetry.group.test]
 optional = true
