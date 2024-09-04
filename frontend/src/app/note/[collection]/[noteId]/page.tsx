@@ -26,11 +26,11 @@ import {
   Container,
 } from '@chakra-ui/react'
 import { useParams } from 'next/navigation'
-import { MedicalNote } from '../../types/note'
+import { MedicalNote } from '../../../types/note'
 import useSWR from 'swr'
-import Sidebar from '../../components/sidebar'
-import { withAuth } from '../../components/with-auth'
-import EntityVisualization from '../../components/entity-viz'
+import Sidebar from '../../../components/sidebar'
+import { withAuth } from '../../../components/with-auth'
+import EntityVisualization from '../../../components/entity-viz'
 import { CopyIcon } from '@chakra-ui/icons'
 
 const fetcher = async (url: string) => {
@@ -45,25 +45,41 @@ const fetcher = async (url: string) => {
   return res.json()
 }
 
+interface MetaAnnotation {
+  value: string;
+  confidence: number;
+  name: string;
+}
+
 interface Entity {
-  entity_group: string
-  word: string
-  start: number
-  end: number
-  score: number
+  pretty_name: string;
+  cui: string;
+  type_ids: string[];
+  types: string[];
+  source_value: string;
+  detected_name: string;
+  acc: number;
+  context_similarity: number;
+  start: number;
+  end: number;
+  icd10: Array<{ chapter: string; name: string }>;
+  ontologies: string[];
+  snomed: string[];
+  id: number;
+  meta_anns: Record<string, MetaAnnotation>;
 }
 
 interface NERResponse {
-  note_id: string
-  text: string
-  entities: Entity[]
+  note_id: string;
+  text: string;
+  entities: Entity[];
 }
 
 function NotePage() {
   const params = useParams()
-  const { noteId } = params
+  const { collection, noteId } = params
   const { data: note, error, isLoading } = useSWR<MedicalNote>(
-    noteId ? `/api/medical_notes/note/${noteId}` : null,
+    collection && noteId ? `/api/medical_notes/${collection}/note/${noteId}` : null,
     fetcher
   )
   const [nerResponse, setNerResponse] = useState<NERResponse | null>(null)
@@ -77,13 +93,13 @@ function NotePage() {
   const noteBgColor = useColorModeValue('gray.100', 'gray.800')
 
   const extractEntities = useCallback(async () => {
-    if (!noteId) return
+    if (!collection || !noteId) return
 
     setIsExtracting(true)
     setNerResponse(null)
 
     try {
-      const response = await fetch(`/api/extract_entities/${noteId}`, {
+      const response = await fetch(`/api/extract_entities/${collection}/${noteId}`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`,
@@ -124,19 +140,19 @@ function NotePage() {
     } finally {
       setIsExtracting(false)
     }
-  }, [noteId, toast])
+  }, [collection, noteId, toast])
 
   const resetNote = useCallback(() => {
     setNerResponse(null)
   }, [])
 
   const copyToClipboard = useCallback(async () => {
-    if (!noteId) return
+    if (!collection || !noteId) return
 
     setIsCopying(true)
 
     try {
-      const response = await fetch(`/api/medical_notes/note/${noteId}/raw`, {
+      const response = await fetch(`/api/medical_notes/${collection}/note/${noteId}/raw`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`,
         },
@@ -169,16 +185,18 @@ function NotePage() {
     } finally {
       setIsCopying(false)
     }
-  }, [noteId, toast])
+  }, [collection, noteId, toast])
 
   const entityStats = useMemo(() => {
-    if (!nerResponse) return []
+    if (!nerResponse) return [];
     const groups = nerResponse.entities.reduce((acc, entity) => {
-      acc[entity.entity_group] = (acc[entity.entity_group] || 0) + 1
-      return acc
-    }, {} as Record<string, number>)
-    return Object.entries(groups).sort((a, b) => b[1] - a[1]).slice(0, 5)
-  }, [nerResponse])
+      entity.types.forEach(type => {
+        acc[type] = (acc[type] || 0) + 1;
+      });
+      return acc;
+    }, {} as Record<string, number>);
+    return Object.entries(groups).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  }, [nerResponse]);
 
   const renderContent = () => {
     if (isLoading) {
@@ -211,6 +229,7 @@ function NotePage() {
               <Badge colorScheme="blue">Note ID: {note.note_id}</Badge>
               <Badge colorScheme="green">Subject ID: {note.subject_id}</Badge>
               <Badge colorScheme="purple">HADM ID: {note.hadm_id}</Badge>
+              <Badge colorScheme="orange">Collection: {collection}</Badge>
             </Flex>
             <Divider />
             <HStack spacing={4}>

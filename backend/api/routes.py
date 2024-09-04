@@ -1,16 +1,19 @@
 """Backend API routes."""
 
+import asyncio
 import logging
+import os
 from datetime import timedelta
-from typing import Any, Dict, List, Tuple
+from enum import Enum
+from typing import Any, Dict, List
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import PlainTextResponse
-from httpx import AsyncClient
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.notes.data import Entity, MedicalNote, NERResponse
+from api.notes.data import MedicalNote, NERResponse
 from api.notes.db import get_database
 from api.users.auth import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
@@ -34,70 +37,24 @@ from api.users.utils import verify_password
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
 router = APIRouter()
 
-
-def preprocess_text(text: str) -> Tuple[str, List[int]]:
-    """
-    Preprocess the input text by removing non-printable characters.
-
-    Parameters
-    ----------
-    text : str
-        The input text to preprocess.
-
-    Returns
-    -------
-    Tuple[str, List[int]]
-        A tuple with the preprocessed text and a list of removed character indices.
-    """
-    preprocessed = []
-    removed_indices = []
-    for i, char in enumerate(text):
-        if char.isprintable() or char.isspace():
-            preprocessed.append(char)
-        else:
-            removed_indices.append(i)
-    return "".join(preprocessed), removed_indices
+# Configuration
+NER_SERVICE_TIMEOUT = 300  # 5 minutes
+NER_SERVICE_PORT = os.getenv("NER_SERVICE_PORT", "8000")
+NER_SERVICE_URL = f"http://clinical-ner-service-dev:{NER_SERVICE_PORT}/extract_entities"
 
 
-def adjust_entity_positions(
-    entities: List[Entity], removed_indices: List[int]
-) -> List[Entity]:
-    """
-    Adjust entity positions based on removed character indices.
+class CollectionName(str, Enum):
+    """Enum for collection names."""
 
-    Parameters
-    ----------
-    entities : List[Entity]
-        The list of entities to adjust.
-    removed_indices : List[int]
-        The list of indices of removed characters.
-
-    Returns
-    -------
-    List[Entity]
-        The list of entities with adjusted positions.
-    """
-    adjusted_entities = []
-    for entity in entities:
-        start = entity.start + sum(1 for i in removed_indices if i < entity.start)
-        end = entity.end + sum(1 for i in removed_indices if i < entity.end)
-        adjusted_entities.append(
-            Entity(
-                entity_group=entity.entity_group,
-                word=entity.word,
-                start=start,
-                end=end,
-                score=entity.score,
-            )
-        )
-    return adjusted_entities
+    MIMICIV_DISCHARGE = "mimiciv_discharge_notes"
+    MIMICIV_RADIOLOGY = "mimiciv_radiology_notes"
 
 
-@router.post("/extract_entities/{note_id}", response_model=NERResponse)
+@router.post("/extract_entities/{collection}/{note_id}", response_model=NERResponse)
 async def extract_entities(
+    collection: CollectionName,
     note_id: str,
     db: AsyncIOMotorDatabase[Any] = Depends(get_database),  # noqa: B008
     current_user: User = Depends(get_current_active_user),  # noqa: B008
@@ -107,8 +64,10 @@ async def extract_entities(
 
     Parameters
     ----------
+    collection : CollectionName
+        The name of the collection containing the note.
     note_id : str
-        The ID of the medical note.
+        The ID of the note to process.
     db : AsyncIOMotorDatabase
         The database connection.
     current_user : User
@@ -122,11 +81,11 @@ async def extract_entities(
     Raises
     ------
     HTTPException
-        If the note is not found or an error occurs during processing.
+        If the note is not found or if there's an error in entity extraction.
     """
     try:
-        collection = db.medical_notes
-        note = await collection.find_one({"note_id": note_id})
+        # Fetch the note from the database
+        note = await db[collection.value].find_one({"note_id": note_id})
 
         if not note:
             raise HTTPException(
@@ -134,55 +93,102 @@ async def extract_entities(
             )
 
         original_text = note["text"]
-        preprocessed_text, removed_indices = preprocess_text(original_text)
 
-        ner_url = "http://cyclops.cluster.local:8003/ner"
-        async with AsyncClient() as client:
-            response = await client.post(
-                ner_url,
-                json={"text": preprocessed_text},
-                timeout=60.0,
-            )
-            response.raise_for_status()
-            ner_result = response.json()
-
-            if "entities" not in ner_result:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="NER endpoint returned unexpected response",
+        # Call the clinical NER service with increased timeout
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(NER_SERVICE_TIMEOUT)
+        ) as client:
+            try:
+                response = await client.post(
+                    NER_SERVICE_URL, json={"text": original_text}
                 )
+                response.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                logger.error(f"HTTP error occurred: {exc}")
+                raise HTTPException(
+                    status_code=exc.response.status_code,
+                    detail=f"Error calling clinical NER service: {exc.response.text}",
+                ) from exc
+            except httpx.RequestError as exc:
+                logger.error(f"An error occurred while requesting {exc.request.url!r}.")
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Clinical NER service is unavailable",
+                ) from exc
+            except asyncio.TimeoutError as exc:
+                logger.error("Request to clinical NER service timed out")
+                raise HTTPException(
+                    status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                    detail="Clinical NER service request timed out",
+                ) from exc
 
-            preprocessed_entities = [
-                Entity(**entity) for entity in ner_result["entities"]
-            ]
-            adjusted_entities = adjust_entity_positions(
-                preprocessed_entities, removed_indices
-            )
+        ner_response = response.json()
+        ner_response["note_id"] = note_id
 
-        logger.info(f"Extracted {len(adjusted_entities)} entities from note {note_id}")
-        return NERResponse(
-            note_id=note_id, text=original_text, entities=adjusted_entities
-        )
+        return NERResponse(**ner_response)
 
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Unexpected error in extract_entities: {str(e)}", exc_info=True)
+        logger.exception(f"Unexpected error in extract_entities: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"An unexpected error occurred: {str(e)}",
+            detail="An unexpected error occurred while processing the request",
         ) from e
 
 
-@router.get("/medical_notes/{patient_id}", response_model=List[MedicalNote])
+@router.get("/collections", response_model=List[str])
+async def get_collections(
+    db: AsyncIOMotorDatabase[Any] = Depends(get_database),  # noqa: B008
+    current_user: User = Depends(get_current_active_user),  # noqa: B008
+) -> List[str]:
+    """
+    Retrieve a list of available collections.
+
+    Parameters
+    ----------
+    db : AsyncIOMotorDatabase
+        The database connection.
+    current_user : User
+        The current authenticated user.
+
+    Returns
+    -------
+    List[str]
+        A list of collection names.
+
+    Raises
+    ------
+    HTTPException
+        If an error occurs during retrieval.
+    """
+    try:
+        collections = await db.list_collection_names()
+        return [col for col in collections if col.startswith("mimiciv_")]
+    except Exception as e:
+        logger.error(f"Error retrieving collections: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while retrieving collections",
+        ) from e
+
+
+@router.get(
+    "/medical_notes/{collection}/{patient_id}", response_model=List[MedicalNote]
+)
 async def get_medical_notes(
+    collection: CollectionName,
     patient_id: str,
     db: AsyncIOMotorDatabase[Any] = Depends(get_database),  # noqa: B008
     current_user: User = Depends(get_current_active_user),  # noqa: B008
 ) -> List[MedicalNote]:
     """
-    Retrieve medical notes for a specific patient.
+    Retrieve medical notes for a specific patient from a specific collection.
 
     Parameters
     ----------
+    collection : CollectionName
+        The name of the collection to query.
     patient_id : str
         The ID of the patient.
     db : AsyncIOMotorDatabase
@@ -198,7 +204,7 @@ async def get_medical_notes(
     Raises
     ------
     HTTPException
-        If the patient ID is invalid or an error occurs during retrieval.
+        If the patient ID is invalid, no notes are found, or an error during retrieval.
     """
     try:
         patient_id_int = int(patient_id)
@@ -209,17 +215,20 @@ async def get_medical_notes(
         ) from e
 
     try:
-        collection = db.medical_notes
-        cursor = collection.find({"subject_id": patient_id_int})
+        cursor = db[collection.value].find({"patient_id": patient_id_int})
         notes = await cursor.to_list(length=None)
 
         if not notes:
+            logger.info(f"No medical notes found for patient ID {patient_id_int}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="No medical notes found for this patient",
+                detail=f"No medical notes found for patient ID {patient_id_int}",
             )
 
         return [MedicalNote(**note) for note in notes]
+    except HTTPException as he:
+        # Re-raise HTTP exceptions (including our 404)
+        raise he
     except Exception as e:
         logger.error(
             f"Error retrieving medical notes for patient ID {patient_id_int}: {str(e)}"
@@ -230,17 +239,20 @@ async def get_medical_notes(
         ) from e
 
 
-@router.get("/medical_notes/note/{note_id}", response_model=MedicalNote)
+@router.get("/medical_notes/{collection}/note/{note_id}", response_model=MedicalNote)
 async def get_medical_note(
+    collection: CollectionName,
     note_id: str,
     db: AsyncIOMotorDatabase[Any] = Depends(get_database),  # noqa: B008
     current_user: User = Depends(get_current_active_user),  # noqa: B008
 ) -> MedicalNote:
     """
-    Retrieve a specific medical note by its ID.
+    Retrieve a specific medical note by its ID from a specific collection.
 
     Parameters
     ----------
+    collection : CollectionName
+        The name of the collection to query.
     note_id : str
         The ID of the medical note.
     db : AsyncIOMotorDatabase
@@ -259,8 +271,7 @@ async def get_medical_note(
         If the note is not found or an error occurs during retrieval.
     """
     try:
-        collection = db.medical_notes
-        note = await collection.find_one({"note_id": note_id})
+        note = await db[collection.value].find_one({"note_id": note_id})
 
         if not note:
             raise HTTPException(
@@ -276,8 +287,11 @@ async def get_medical_note(
         ) from e
 
 
-@router.get("/medical_notes/note/{note_id}/raw", response_class=PlainTextResponse)
+@router.get(
+    "/medical_notes/{collection}/note/{note_id}/raw", response_class=PlainTextResponse
+)
 async def get_raw_medical_note(
+    collection: CollectionName,
     note_id: str,
     db: AsyncIOMotorDatabase[Any] = Depends(get_database),  # noqa: B008
     current_user: User = Depends(get_current_active_user),  # noqa: B008
@@ -287,6 +301,8 @@ async def get_raw_medical_note(
 
     Parameters
     ----------
+    collection : CollectionName
+        The name of the collection to query.
     note_id : str
         The ID of the medical note.
     db : AsyncIOMotorDatabase
@@ -305,8 +321,7 @@ async def get_raw_medical_note(
         If the note is not found or an error occurs during retrieval.
     """
     try:
-        collection = db.medical_notes
-        note = await collection.find_one({"note_id": note_id})
+        note = await db[collection.value].find_one({"note_id": note_id})
 
         if not note:
             raise HTTPException(

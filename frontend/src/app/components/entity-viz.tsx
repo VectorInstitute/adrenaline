@@ -1,12 +1,28 @@
 import React, { useMemo, useCallback } from 'react';
-import { Box, Text, Popover, PopoverTrigger, PopoverContent, PopoverBody, PopoverArrow, useColorModeValue } from '@chakra-ui/react';
+import { Box, Text, Popover, PopoverTrigger, PopoverContent, PopoverBody, PopoverArrow, useColorModeValue, Table, Tbody, Tr, Td } from '@chakra-ui/react';
+
+interface MetaAnnotation {
+  value: string;
+  confidence: number;
+  name: string;
+}
 
 interface Entity {
-  entity_group: string;
-  word: string;
+  pretty_name: string;
+  cui: string;
+  type_ids: string[];
+  types: string[];
+  source_value: string;
+  detected_name: string;
+  acc: number;
+  context_similarity: number;
   start: number;
   end: number;
-  score: number;
+  icd10: Array<{ chapter: string; name: string }>;
+  ontologies: string[];
+  snomed: string[];
+  id: number;
+  meta_anns: Record<string, MetaAnnotation>;
 }
 
 interface EntityVisualizationProps {
@@ -19,12 +35,12 @@ const EntityVisualization: React.FC<EntityVisualizationProps> = ({ text, entitie
   const bgColor = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.600');
 
-  const getEntityColor = useCallback((entityGroup: string) => {
+  const getEntityColor = useCallback((entityTypes: string[]) => {
     const baseColors = [
       'red', 'blue', 'green', 'yellow', 'purple', 'orange', 'pink', 'teal', 'cyan', 'gray'
     ];
 
-    const hash = entityGroup.split('').reduce((acc, char) => char.charCodeAt(0) + acc, 0);
+    const hash = entityTypes.join('').split('').reduce((acc, char) => char.charCodeAt(0) + acc, 0);
     const colorIndex = hash % baseColors.length;
     const shade = (hash % 3 + 1) * 100; // This will give us shades 100, 200, or 300
 
@@ -49,7 +65,7 @@ const EntityVisualization: React.FC<EntityVisualizationProps> = ({ text, entitie
           <PopoverTrigger>
             <Text
               as="span"
-              bg={getEntityColor(entity.entity_group)}
+              bg={getEntityColor(entity.types)}
               px={1}
               borderRadius="sm"
               cursor="pointer"
@@ -60,9 +76,32 @@ const EntityVisualization: React.FC<EntityVisualizationProps> = ({ text, entitie
           <PopoverContent bg={bgColor} borderColor={borderColor}>
             <PopoverArrow />
             <PopoverBody>
-              <strong>Entity:</strong> {entity.entity_group}<br />
-              <strong>Word:</strong> {entity.word}<br />
-              <strong>Score:</strong> {entity.score.toFixed(2)}
+              <Table size="sm">
+                <Tbody>
+                  <Tr>
+                    <Td fontWeight="bold">Name:</Td>
+                    <Td>{entity.pretty_name}</Td>
+                  </Tr>
+                  <Tr>
+                    <Td fontWeight="bold">Types:</Td>
+                    <Td>{entity.types.join(', ')}</Td>
+                  </Tr>
+                  <Tr>
+                    <Td fontWeight="bold">CUI:</Td>
+                    <Td>{entity.cui}</Td>
+                  </Tr>
+                  <Tr>
+                    <Td fontWeight="bold">Accuracy:</Td>
+                    <Td>{entity.acc.toFixed(2)}</Td>
+                  </Tr>
+                  {entity.icd10.length > 0 && (
+                    <Tr>
+                      <Td fontWeight="bold">ICD-10:</Td>
+                      <Td>{entity.icd10.map(icd => `${icd.chapter}: ${icd.name}`).join(', ')}</Td>
+                    </Tr>
+                  )}
+                </Tbody>
+              </Table>
             </PopoverBody>
           </PopoverContent>
         </Popover>

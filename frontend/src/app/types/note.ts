@@ -1,6 +1,6 @@
 export interface MedicalNote {
     note_id: string;
-    subject_id: number;
-    hadm_id: string;
+    patient_id: number;
+    encounter_id: string;
     text: string;
   }

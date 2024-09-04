@@ -1,32 +1,8 @@
-"""Data models for medical notes."""
+"""NER service data models."""
 
 from typing import Dict, List
 
-from pydantic import BaseModel, Field
-
-
-class MedicalNote(BaseModel):
-    """
-    Represents a medical note.
-
-    Attributes
-    ----------
-    note_id : str
-        The unique identifier for the note.
-    subject_id : int
-        The subject (patient) identifier.
-    hadm_id : str
-        The hospital admission identifier.
-    text : str
-        The content of the medical note.
-    """
-
-    note_id: str = Field(..., description="Unique identifier for the note")
-    patient_id: int = Field(..., description="Patient identifier")
-    encounter_id: str = Field(
-        ..., description="Hospital admission/encounter identifier"
-    )
-    text: str = Field(..., description="Content of the medical note")
+from pydantic import BaseModel
 
 
 class MetaAnnotation(BaseModel):
@@ -35,12 +11,12 @@ class MetaAnnotation(BaseModel):
 
     Attributes
     ----------
-    value: str
+    value : str
         The value of the meta-annotation.
-    confidence: float
+    confidence : float
         The confidence of the meta-annotation.
-    name: str
-
+    name : str
+        The name of the meta-annotation.
     """
 
     value: str
@@ -54,35 +30,35 @@ class Entity(BaseModel):
 
     Attributes
     ----------
-    pretty_name: str
+    pretty_name : str
         The pretty name of the entity.
-    cui: str
+    cui : str
         The CUI of the entity.
-    type_ids: List[str]
+    type_ids : List[str]
         The type IDs of the entity.
-    types: List[str]
+    types : List[str]
         The types of the entity.
-    source_value: str
+    source_value : str
         The source value of the entity.
-    detected_name: str
+    detected_name : str
         The detected name of the entity.
-    acc: float
+    acc : float
         The accuracy of the entity.
-    context_similarity: float
+    context_similarity : float
         The context similarity of the entity.
-    start: int
+    start : int
         The start index of the entity in the text.
-    end: int
+    end : int
         The end index of the entity in the text.
-    icd10: List[Dict[str, str]]
+    icd10 : List[Dict[str, str]]
         The ICD-10 codes of the entity.
-    ontologies: List[str]
+    ontologies : List[str]
         The ontologies of the entity.
-    snomed: List[str]
+    snomed : List[str]
         The SNOMED codes of the entity.
-    id: int
+    id : int
         The ID of the entity.
-    meta_anns: Dict[str, MetaAnnotation]
+    meta_anns : Dict[str, MetaAnnotation]
         The meta-annotations of the entity.
     """
 
@@ -109,14 +85,11 @@ class NERResponse(BaseModel):
 
     Attributes
     ----------
-    note_id : str
-        The unique identifier for the note.
     text : str
         The content of the medical note.
     entities : List[Entity]
-        The list of entities in the medical note.
+        The list of entities extracted from the medical note.
     """
 
-    note_id: str
     text: str
     entities: List[Entity]
