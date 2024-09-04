@@ -227,8 +227,8 @@ function NotePage() {
           <VStack align="stretch" spacing={6}>
             <Flex wrap="wrap" gap={2}>
               <Badge colorScheme="blue">Note ID: {note.note_id}</Badge>
-              <Badge colorScheme="green">Subject ID: {note.subject_id}</Badge>
-              <Badge colorScheme="purple">HADM ID: {note.hadm_id}</Badge>
+              <Badge colorScheme="green">Patient ID: {note.patient_id}</Badge>
+              <Badge colorScheme="purple">Encounter ID: {note.encounter_id}</Badge>
               <Badge colorScheme="orange">Collection: {collection}</Badge>
             </Flex>
             <Divider />

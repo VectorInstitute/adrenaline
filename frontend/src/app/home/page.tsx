@@ -119,7 +119,7 @@ function HomePage() {
         setMedicalNotes([])
         toast({
           title: "Info",
-          description: "No medical notes found for this patient",
+          description: "No clinical notes found for this patient",
           status: "info",
           duration: 3000,
           isClosable: true,
@@ -128,7 +128,7 @@ function HomePage() {
       }
 
       if (!response.ok) {
-        throw new Error('Failed to fetch medical notes')
+        throw new Error('Failed to fetch clinical notes')
       }
 
       const data = await response.json()
@@ -141,10 +141,10 @@ function HomePage() {
         isClosable: true,
       })
     } catch (error) {
-      console.error('Error loading medical notes:', error)
+      console.error('Error loading clinical notes:', error)
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : "An error occurred while loading medical notes",
+        description: error instanceof Error ? error.message : "An error occurred while loading clinical notes",
         status: "error",
         duration: 3000,
         isClosable: true,
@@ -168,7 +168,7 @@ function HomePage() {
             <Card bg={cardBgColor} p={6} borderRadius="xl" shadow="lg" borderWidth={1} borderColor={borderColor}>
               <CardBody>
                 <Heading as="h1" size="xl" color={primaryColor} mb={4}>Clinical Notes Dashboard</Heading>
-                <Text fontSize="lg" color={textColor}>Access and analyze patient medical records efficiently.</Text>
+                <Text fontSize="lg" color={textColor}>Load and extract entities from clinical notes.</Text>
               </CardBody>
             </Card>
 
@@ -180,7 +180,7 @@ function HomePage() {
 
             <Card bg={cardBgColor} p={6} borderRadius="xl" shadow="lg" borderWidth={1} borderColor={borderColor}>
               <CardBody>
-                <Heading as="h2" size="lg" color={secondaryColor} mb={6}>Load Medical Notes</Heading>
+                <Heading as="h2" size="lg" color={secondaryColor} mb={6}>Load Clinical Notes</Heading>
                 <Flex direction={{ base: 'column', md: 'row' }} mb={4} align="center">
                   <Select
                     value={collection}
@@ -230,7 +230,7 @@ function HomePage() {
 
             <Card bg={cardBgColor} p={6} borderRadius="xl" shadow="lg" borderWidth={1} borderColor={borderColor}>
               <CardBody>
-                <Heading as="h2" size="lg" color={secondaryColor} mb={6}>Medical Notes</Heading>
+                <Heading as="h2" size="lg" color={secondaryColor} mb={6}>Clinical Notes</Heading>
                 {isLoading ? (
                   <VStack spacing={4}>
                     {[...Array(5)].map((_, index) => (
@@ -272,7 +272,7 @@ function HomePage() {
                     </Table>
                   </Box>
                 ) : (
-                  <Text>No medical notes available. Please load notes for a patient.</Text>
+                  <Text>No clinical notes available. Please load notes for a patient.</Text>
                 )}
               </CardBody>
             </Card>
