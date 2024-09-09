@@ -20,8 +20,8 @@ class MedicalNote(BaseModel):
         The hospital admission identifier.
     text : str
         The content of the medical note.
-    timestamp : str
-        The timestamp of the note in ISO 8601 format.
+    timestamp : datetime
+        The timestamp of the note.
     """
 
     note_id: str = Field(..., description="Unique identifier for the note")
