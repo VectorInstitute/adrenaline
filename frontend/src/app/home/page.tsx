@@ -30,6 +30,7 @@ import {
   Tag,
   Tooltip,
   Badge,
+  IconButton,
 } from '@chakra-ui/react'
 import { useRouter } from 'next/navigation'
 import { FaFileAlt, FaUser, FaHospital, FaSearch, FaEye } from 'react-icons/fa'
@@ -44,6 +45,8 @@ const HomePage: React.FC = () => {
   const [medicalNotes, setMedicalNotes] = useState<MedicalNote[]>([])
   const [isLoading, setIsLoading] = useState<boolean>(false)
   const [isLoadingCollections, setIsLoadingCollections] = useState<boolean>(true)
+  const [totalNotes, setTotalNotes] = useState<number>(0)
+  const [isLoadingTotalNotes, setIsLoadingTotalNotes] = useState<boolean>(false)
 
   const router = useRouter()
   const toast = useToast()
@@ -61,6 +64,12 @@ const HomePage: React.FC = () => {
   useEffect(() => {
     fetchCollections()
   }, [])
+
+  useEffect(() => {
+    if (collection) {
+      fetchTotalNotes()
+    }
+  }, [collection])
 
   const fetchCollections = async () => {
     try {
@@ -88,6 +97,34 @@ const HomePage: React.FC = () => {
       })
     } finally {
       setIsLoadingCollections(false)
+    }
+  }
+
+  const fetchTotalNotes = async () => {
+    setIsLoadingTotalNotes(true)
+    try {
+      const response = await fetch(`/api/total_notes/${collection}`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        },
+      })
+      if (!response.ok) {
+        throw new Error('Failed to fetch total notes')
+      }
+      const total = await response.json()
+      setTotalNotes(total)
+    } catch (error) {
+      console.error('Error fetching total notes:', error)
+      toast({
+        title: "Error",
+        description: "Failed to fetch total notes",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+      })
+      setTotalNotes(0)
+    } finally {
+      setIsLoadingTotalNotes(false)
     }
   }
 
@@ -180,7 +217,13 @@ const HomePage: React.FC = () => {
             </Card>
 
             <SimpleGrid columns={{ base: 1, md: 3 }} spacing={6}>
-              <StatCard icon={FaFileAlt} title="Total Notes" value={medicalNotes.length} color="teal" />
+              <StatCard
+                icon={FaFileAlt}
+                title="Total Notes"
+                value={medicalNotes.length > 0 ? medicalNotes.length : totalNotes}
+                color="teal"
+                isLoading={isLoadingTotalNotes && medicalNotes.length === 0}
+              />
               <StatCard icon={FaUser} title="Patient ID" value={patientId || 'N/A'} color="blue" />
               <StatCard icon={FaHospital} title="Collection" value={collection || 'N/A'} color="purple" />
             </SimpleGrid>
@@ -258,7 +301,7 @@ const HomePage: React.FC = () => {
                       <Tbody>
                         {medicalNotes.map((note, index) => (
                           <React.Fragment key={note.note_id}>
-                            <Tr _hover={{ bg: tableHoverBg }} transition="background-color 0.2s">
+                            <Tr _hover={{ bg: tableHoverBg }} transition="background-color 0.2s" cursor="pointer" onClick={() => handleNoteClick(note.note_id)}>
                               <Td borderColor={tableBorderColor}>
                                 <Tag colorScheme="blue" variant="solid">{note.note_id}</Tag>
                               </Td>
@@ -281,15 +324,17 @@ const HomePage: React.FC = () => {
                                 </Tooltip>
                               </Td>
                               <Td borderColor={tableBorderColor}>
-                                <Button
+                                <IconButton
+                                  aria-label="View note"
+                                  icon={<FaEye />}
                                   size="sm"
-                                  onClick={() => handleNoteClick(note.note_id)}
                                   colorScheme="blue"
-                                  variant="outline"
-                                  leftIcon={<FaEye />}
-                                >
-                                  View
-                                </Button>
+                                  variant="ghost"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleNoteClick(note.note_id);
+                                  }}
+                                />
                               </Td>
                             </Tr>
                             {index < medicalNotes.length - 1 && (
@@ -321,9 +366,10 @@ interface StatCardProps {
   title: string;
   value: string | number;
   color: string;
+  isLoading?: boolean;
 }
 
-const StatCard: React.FC<StatCardProps> = ({ icon, title, value, color }) => {
+const StatCard: React.FC<StatCardProps> = ({ icon, title, value, color, isLoading = false }) => {
   const cardBgColor = useColorModeValue('white', 'gray.800')
   const borderColor = useColorModeValue('gray.200', 'gray.700')
 
@@ -333,7 +379,11 @@ const StatCard: React.FC<StatCardProps> = ({ icon, title, value, color }) => {
         <VStack spacing={4} align="center">
           <Icon as={icon} boxSize={10} color={`${color}.500`} />
           <Heading size="md" textAlign="center">{title}</Heading>
-          <Text fontSize="2xl" fontWeight="bold" color={`${color}.500`}>{value}</Text>
+          {isLoading ? (
+            <Skeleton height="24px" width="60px" />
+          ) : (
+            <Text fontSize="2xl" fontWeight="bold" color={`${color}.500`}>{value}</Text>
+          )}
         </VStack>
       </CardBody>
     </Card>

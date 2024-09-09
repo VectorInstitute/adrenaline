@@ -52,6 +52,46 @@ class CollectionName(str, Enum):
     MIMICIV_RADIOLOGY = "mimiciv_radiology_notes"
 
 
+@router.get("/total_notes/{collection}", response_model=int)
+async def get_total_notes(
+    collection: CollectionName,
+    db: AsyncIOMotorDatabase[Any] = Depends(get_database),  # noqa: B008
+    current_user: User = Depends(get_current_active_user),  # noqa: B008
+) -> int:
+    """
+    Get the total number of notes in a collection.
+
+    Parameters
+    ----------
+    collection : CollectionName
+        The name of the collection to query.
+    db : AsyncIOMotorDatabase
+        The database connection.
+    current_user : User
+        The current authenticated user.
+
+    Returns
+    -------
+    int
+        The total number of notes in the collection.
+    """
+    try:
+        # Use estimated_document_count for faster performance
+        total_notes = await db[collection.value].estimated_document_count()
+
+        # If the estimated count is 0, double-check with a precise count
+        if total_notes == 0:
+            total_notes = await db[collection.value].count_documents({})
+
+        return total_notes
+    except Exception as e:
+        logger.error(f"Error getting total notes count: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while fetching the total note count",
+        ) from e
+
+
 @router.post("/extract_entities/{collection}/{note_id}", response_model=NERResponse)
 async def extract_entities(
     collection: CollectionName,
