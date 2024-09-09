@@ -26,20 +26,24 @@ import {
   Skeleton,
   InputGroup,
   InputLeftElement,
+  Divider,
+  Tag,
+  Tooltip,
+  Badge,
 } from '@chakra-ui/react'
 import { useRouter } from 'next/navigation'
-import { FaFileAlt, FaUser, FaHospital, FaSearch } from 'react-icons/fa'
+import { FaFileAlt, FaUser, FaHospital, FaSearch, FaEye } from 'react-icons/fa'
 import Sidebar from '../components/sidebar'
 import { withAuth } from '../components/with-auth'
 import { MedicalNote } from '../types/note'
 
-function HomePage() {
-  const [patientId, setPatientId] = useState('')
-  const [collection, setCollection] = useState('')
+const HomePage: React.FC = () => {
+  const [patientId, setPatientId] = useState<string>('')
+  const [collection, setCollection] = useState<string>('')
   const [collections, setCollections] = useState<string[]>([])
   const [medicalNotes, setMedicalNotes] = useState<MedicalNote[]>([])
-  const [isLoading, setIsLoading] = useState(false)
-  const [isLoadingCollections, setIsLoadingCollections] = useState(true)
+  const [isLoading, setIsLoading] = useState<boolean>(false)
+  const [isLoadingCollections, setIsLoadingCollections] = useState<boolean>(true)
 
   const router = useRouter()
   const toast = useToast()
@@ -50,6 +54,9 @@ function HomePage() {
   const cardBgColor = useColorModeValue('white', 'gray.800')
   const textColor = useColorModeValue('gray.800', 'gray.100')
   const borderColor = useColorModeValue('gray.200', 'gray.700')
+  const tableBorderColor = useColorModeValue('gray.200', 'gray.600')
+  const tableHoverBg = useColorModeValue('gray.100', 'gray.700')
+  const tableHeaderBg = useColorModeValue('gray.100', 'gray.700')
 
   useEffect(() => {
     fetchCollections()
@@ -181,12 +188,10 @@ function HomePage() {
             <Card bg={cardBgColor} p={6} borderRadius="xl" shadow="lg" borderWidth={1} borderColor={borderColor}>
               <CardBody>
                 <Heading as="h2" size="lg" color={secondaryColor} mb={6}>Load Clinical Notes</Heading>
-                <Flex direction={{ base: 'column', md: 'row' }} mb={4} align="center">
+                <Flex direction={{ base: 'column', md: 'row' }} mb={4} align="center" gap={4}>
                   <Select
                     value={collection}
                     onChange={(e) => setCollection(e.target.value)}
-                    mb={{ base: 4, md: 0 }}
-                    mr={{ md: 4 }}
                     isDisabled={isLoadingCollections}
                     bg={cardBgColor}
                     borderColor={borderColor}
@@ -201,14 +206,14 @@ function HomePage() {
                       ))
                     )}
                   </Select>
-                  <InputGroup mb={{ base: 4, md: 0 }} mr={{ md: 4 }} flex={1}>
+                  <InputGroup flex={1}>
                     <InputLeftElement pointerEvents="none">
                       <Icon as={FaSearch} color="gray.300" />
                     </InputLeftElement>
                     <Input
                       value={patientId}
                       onChange={(e) => setPatientId(e.target.value)}
-                      placeholder="Enter patient ID..."
+                      placeholder="Enter Patient ID..."
                       bg={cardBgColor}
                       borderColor={borderColor}
                       _hover={{ borderColor: primaryColor }}
@@ -239,40 +244,68 @@ function HomePage() {
                   </VStack>
                 ) : medicalNotes.length > 0 ? (
                   <Box overflowX="auto">
-                    <Table variant="simple">
+                    <Table variant="simple" size="sm">
                       <Thead>
-                        <Tr>
-                          <Th>Note ID</Th>
-                          <Th>Patient ID</Th>
-                          <Th>Encounter ID</Th>
-                          <Th>Text Preview</Th>
-                          <Th>Action</Th>
+                        <Tr bg={tableHeaderBg}>
+                          <Th borderColor={tableBorderColor} color={primaryColor}>Note ID</Th>
+                          <Th borderColor={tableBorderColor} color={primaryColor}>Patient ID</Th>
+                          <Th borderColor={tableBorderColor} color={primaryColor}>Encounter ID</Th>
+                          <Th borderColor={tableBorderColor} color={primaryColor}>Timestamp</Th>
+                          <Th borderColor={tableBorderColor} color={primaryColor}>Text Preview</Th>
+                          <Th borderColor={tableBorderColor} color={primaryColor}>Action</Th>
                         </Tr>
                       </Thead>
                       <Tbody>
-                        {medicalNotes.map((note) => (
-                          <Tr key={note.note_id}>
-                            <Td>{note.note_id}</Td>
-                            <Td>{note.patient_id}</Td>
-                            <Td>{note.encounter_id}</Td>
-                            <Td>{note.text.substring(0, 50)}...</Td>
-                            <Td>
-                              <Button
-                                size="sm"
-                                onClick={() => handleNoteClick(note.note_id)}
-                                colorScheme="blue"
-                                variant="outline"
-                              >
-                                View Full Note
-                              </Button>
-                            </Td>
-                          </Tr>
+                        {medicalNotes.map((note, index) => (
+                          <React.Fragment key={note.note_id}>
+                            <Tr _hover={{ bg: tableHoverBg }} transition="background-color 0.2s">
+                              <Td borderColor={tableBorderColor}>
+                                <Tag colorScheme="blue" variant="solid">{note.note_id}</Tag>
+                              </Td>
+                              <Td borderColor={tableBorderColor}>
+                                <Badge colorScheme="green">{note.patient_id}</Badge>
+                              </Td>
+                              <Td borderColor={tableBorderColor}>
+                                <Badge colorScheme="purple">
+                                  {note.encounter_id === '-1' ? 'N/A' : note.encounter_id}
+                                </Badge>
+                              </Td>
+                              <Td borderColor={tableBorderColor}>
+                                <Text fontSize="sm" color={textColor}>{new Date(note.timestamp).toLocaleString()}</Text>
+                              </Td>
+                              <Td borderColor={tableBorderColor}>
+                                <Tooltip label={note.text} placement="top" hasArrow>
+                                  <Text fontSize="sm" color={textColor} isTruncated maxWidth="200px">
+                                    {note.text.substring(0, 50)}...
+                                  </Text>
+                                </Tooltip>
+                              </Td>
+                              <Td borderColor={tableBorderColor}>
+                                <Button
+                                  size="sm"
+                                  onClick={() => handleNoteClick(note.note_id)}
+                                  colorScheme="blue"
+                                  variant="outline"
+                                  leftIcon={<FaEye />}
+                                >
+                                  View
+                                </Button>
+                              </Td>
+                            </Tr>
+                            {index < medicalNotes.length - 1 && (
+                              <Tr>
+                                <Td colSpan={6} p={0}>
+                                  <Divider borderColor={tableBorderColor} />
+                                </Td>
+                              </Tr>
+                            )}
+                          </React.Fragment>
                         ))}
                       </Tbody>
                     </Table>
                   </Box>
                 ) : (
-                  <Text>No clinical notes available. Please load notes for a patient.</Text>
+                  <Text color={textColor}>No clinical notes available. Please load notes for a patient.</Text>
                 )}
               </CardBody>
             </Card>
@@ -283,7 +316,14 @@ function HomePage() {
   )
 }
 
-function StatCard({ icon, title, value, color }) {
+interface StatCardProps {
+  icon: React.ElementType;
+  title: string;
+  value: string | number;
+  color: string;
+}
+
+const StatCard: React.FC<StatCardProps> = ({ icon, title, value, color }) => {
   const cardBgColor = useColorModeValue('white', 'gray.800')
   const borderColor = useColorModeValue('gray.200', 'gray.700')
 

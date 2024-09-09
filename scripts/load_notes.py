@@ -99,6 +99,7 @@ async def load_medical_notes(
             note_id = note.get("note_id")
             patient_id = note.get("subject_id")
             encounter_id = note.get("hadm_id")
+            timestamp = note.get("charttime")
             text = note.get("text")
             note_type = note.get("note_type") or ""
 
@@ -112,6 +113,7 @@ async def load_medical_notes(
                                 "encounter_id": encounter_id,
                                 "text": text,
                                 "note_type": note_type,
+                                "timestamp": timestamp,
                             }
                         },
                         upsert=True,

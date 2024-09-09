@@ -1,5 +1,6 @@
 """Data models for medical notes."""
 
+from datetime import datetime
 from typing import Dict, List
 
 from pydantic import BaseModel, Field
@@ -19,6 +20,8 @@ class MedicalNote(BaseModel):
         The hospital admission identifier.
     text : str
         The content of the medical note.
+    timestamp : datetime
+        The timestamp of the note.
     """
 
     note_id: str = Field(..., description="Unique identifier for the note")
@@ -27,6 +30,7 @@ class MedicalNote(BaseModel):
         ..., description="Hospital admission/encounter identifier"
     )
     text: str = Field(..., description="Content of the medical note")
+    timestamp: datetime = Field(..., description="Timestamp of the note")
 
 
 class MetaAnnotation(BaseModel):
