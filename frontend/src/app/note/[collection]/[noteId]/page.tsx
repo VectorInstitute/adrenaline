@@ -229,6 +229,7 @@ function NotePage() {
               <Badge colorScheme="blue">Note ID: {note.note_id}</Badge>
               <Badge colorScheme="green">Patient ID: {note.patient_id}</Badge>
               <Badge colorScheme="purple">Encounter ID: {note.encounter_id}</Badge>
+              <Badge colorScheme="cyan">Timestamp: {note.timestamp.toLocaleString()}</Badge>
               <Badge colorScheme="orange">Collection: {collection}</Badge>
             </Flex>
             <Divider />

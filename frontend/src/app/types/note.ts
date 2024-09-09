@@ -3,4 +3,5 @@ export interface MedicalNote {
     patient_id: number;
     encounter_id: string;
     text: string;
+    timestamp: Date;
   }
