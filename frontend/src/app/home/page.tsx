@@ -1,24 +1,42 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useCallback } from 'react'
 import {
   Box, Text, Flex, Heading, VStack, useColorModeValue, Button, Input,
   Container, Card, CardBody, SimpleGrid, Icon, Table, Thead, Tbody, Tr,
-  Th, Td, useToast, Skeleton, InputGroup, InputLeftElement, Divider, Tag,
-  Tooltip, Badge, IconButton, Tabs, TabList, TabPanels, Tab, TabPanel
+  Th, Td, useToast, Skeleton, InputGroup, InputLeftElement, Tabs, TabList,
+  TabPanels, Tab, TabPanel, Tag, Badge, Tooltip, IconButton, Divider,
+  HStack, Wrap, WrapItem, Center
 } from '@chakra-ui/react'
 import { useRouter } from 'next/navigation'
-import { FaFileAlt, FaUser, FaHospital, FaSearch, FaEye, FaDatabase, FaQuestionCircle } from 'react-icons/fa'
+import { FaFileAlt, FaUser, FaSearch, FaQuestionCircle, FaEye } from 'react-icons/fa'
 import Sidebar from '../components/sidebar'
 import { withAuth } from '../components/with-auth'
 import { PatientData, ClinicalNote, QAPair } from '../types/patient'
+import useSWR from 'swr'
+
+interface DatabaseSummary {
+  total_patients: number;
+  total_notes: number;
+  total_qa_pairs: number;
+}
+
+const fetcher = (url: string) => fetch(url, {
+  headers: {
+    'Authorization': `Bearer ${localStorage.getItem('token')}`,
+  },
+}).then(res => res.json())
 
 const HomePage: React.FC = () => {
   const [patientId, setPatientId] = useState<string>('')
   const [patientData, setPatientData] = useState<PatientData | null>(null)
   const [isLoading, setIsLoading] = useState<boolean>(false)
-  const [dbSummary, setDbSummary] = useState<{ total_patients: number; total_notes: number; total_qa_pairs: number } | null>(null)
-  const [isLoadingDbSummary, setIsLoadingDbSummary] = useState<boolean>(true)
+
+  const { data: dbSummary, error: dbSummaryError } = useSWR<DatabaseSummary>('/api/database_summary', fetcher, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    refreshInterval: 300000,
+  })
 
   const router = useRouter()
   const toast = useToast()
@@ -29,48 +47,6 @@ const HomePage: React.FC = () => {
   const cardBgColor = useColorModeValue('white', 'gray.800')
   const textColor = useColorModeValue('gray.800', 'gray.100')
   const borderColor = useColorModeValue('gray.200', 'gray.700')
-
-  const fetchDatabaseSummary = useCallback(async () => {
-    setIsLoadingDbSummary(true);
-    try {
-      const response = await fetch('/api/database_summary', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
-      });
-      if (!response.ok) {
-        throw new Error('Failed to fetch database summary');
-      }
-      const data = await response.json();
-      console.log('Database summary data:', data);
-      setDbSummary({
-        total_patients: data.total_patients || 0,
-        total_notes: data.total_notes || 0,
-        total_qa_pairs: data.total_qa_pairs || 0,
-      });
-    } catch (error) {
-      console.error('Error fetching database summary:', error);
-      toast({
-        title: "Error",
-        description: "Failed to fetch database summary",
-        status: "error",
-        duration: 3000,
-        isClosable: true,
-      });
-      // Set default values in case of error
-      setDbSummary({
-        total_patients: 0,
-        total_notes: 0,
-        total_qa_pairs: 0,
-      });
-    } finally {
-      setIsLoadingDbSummary(false);
-    }
-  }, [toast]);
-
-  useEffect(() => {
-    fetchDatabaseSummary()
-  }, [fetchDatabaseSummary])
 
   const loadPatientData = useCallback(async () => {
     if (!patientId.trim()) {
@@ -119,7 +95,7 @@ const HomePage: React.FC = () => {
         throw new Error('Failed to fetch patient data')
       }
 
-      const data = await response.json()
+      const data: PatientData = await response.json()
       setPatientData(data)
       toast({
         title: "Success",
@@ -147,6 +123,30 @@ const HomePage: React.FC = () => {
     router.push(`/note/${patientId}/${noteId}`)
   }, [patientId, router])
 
+  const renderSummary = () => (
+    <SimpleGrid columns={{ base: 1, md: 3 }} spacing={6}>
+      <StatCard
+        icon={FaUser}
+        title="Total Patients"
+        value={patientData ? 1 : dbSummary?.total_patients ?? 0}
+        color="teal"
+        isLoading={!dbSummary && !dbSummaryError}
+      />
+      <ClinicalNotesCard
+        patientData={patientData}
+        dbTotalNotes={dbSummary?.total_notes ?? 0}
+        isLoading={!dbSummary && !dbSummaryError}
+      />
+      <StatCard
+        icon={FaQuestionCircle}
+        title="QA Pairs"
+        value={patientData ? patientData.qa_data?.length ?? 0 : dbSummary?.total_qa_pairs ?? 0}
+        color="purple"
+        isLoading={!dbSummary && !dbSummaryError}
+      />
+    </SimpleGrid>
+  )
+
   return (
     <Flex minHeight="100vh" bg={bgColor}>
       <Sidebar />
@@ -160,29 +160,7 @@ const HomePage: React.FC = () => {
               </CardBody>
             </Card>
 
-            <SimpleGrid columns={{ base: 1, md: 3 }} spacing={6}>
-              <StatCard
-                icon={FaDatabase}
-                title="Total Patients"
-                value={dbSummary?.total_patients ?? 0}
-                color="teal"
-                isLoading={isLoadingDbSummary}
-              />
-              <StatCard
-                icon={FaFileAlt}
-                title="Total Notes"
-                value={dbSummary?.total_notes ?? 0}
-                color="blue"
-                isLoading={isLoadingDbSummary}
-              />
-              <StatCard
-                icon={FaQuestionCircle}
-                title="Total QA Pairs"
-                value={dbSummary?.total_qa_pairs ?? 0}
-                color="purple"
-                isLoading={isLoadingDbSummary}
-              />
-            </SimpleGrid>
+            {renderSummary()}
 
             <Card bg={cardBgColor} p={6} borderRadius="xl" shadow="lg" borderWidth={1} borderColor={borderColor}>
               <CardBody>
@@ -219,17 +197,17 @@ const HomePage: React.FC = () => {
               <Card bg={cardBgColor} p={6} borderRadius="xl" shadow="lg" borderWidth={1} borderColor={borderColor}>
                 <CardBody>
                   <Heading as="h2" size="lg" color={secondaryColor} mb={6}>Patient Data</Heading>
-                  <Tabs>
-                    <TabList>
-                      <Tab>Clinical Notes</Tab>
-                      <Tab>QA Pairs</Tab>
+                  <Tabs variant="soft-rounded" colorScheme="teal">
+                    <TabList mb={4}>
+                      <Tab _selected={{ color: 'white', bg: 'teal.500' }}>Clinical Notes</Tab>
+                      <Tab _selected={{ color: 'white', bg: 'teal.500' }}>QA Pairs</Tab>
                     </TabList>
 
                     <TabPanels>
-                      <TabPanel>
+                      <TabPanel px={0}>
                         <ClinicalNotesTable notes={patientData.notes} handleNoteClick={handleNoteClick} />
                       </TabPanel>
-                      <TabPanel>
+                      <TabPanel px={0}>
                         <QAPairsTable qaPairs={patientData.qa_data} />
                       </TabPanel>
                     </TabPanels>
@@ -253,8 +231,8 @@ interface StatCardProps {
 }
 
 const StatCard: React.FC<StatCardProps> = ({ icon, title, value, color, isLoading = false }) => {
-  const cardBgColor = useColorModeValue('white', 'gray.800');
-  const borderColor = useColorModeValue('gray.200', 'gray.700');
+  const cardBgColor = useColorModeValue('white', 'gray.800')
+  const borderColor = useColorModeValue('gray.200', 'gray.700')
 
   return (
     <Card bg={cardBgColor} p={6} borderRadius="xl" shadow="md" borderWidth={1} borderColor={borderColor}>
@@ -266,14 +244,75 @@ const StatCard: React.FC<StatCardProps> = ({ icon, title, value, color, isLoadin
             <Skeleton height="24px" width="60px" />
           ) : (
             <Text fontSize="2xl" fontWeight="bold" color={`${color}.500`}>
-              {value !== undefined ? value : 'N/A'}
+              {value}
             </Text>
           )}
         </VStack>
       </CardBody>
     </Card>
-  );
-};
+  )
+}
+
+interface ClinicalNotesCardProps {
+  patientData: PatientData | null;
+  dbTotalNotes: number;
+  isLoading: boolean;
+}
+
+const ClinicalNotesCard: React.FC<ClinicalNotesCardProps> = ({ patientData, dbTotalNotes, isLoading }) => {
+  const cardBgColor = useColorModeValue('white', 'gray.800')
+  const borderColor = useColorModeValue('gray.200', 'gray.700')
+
+  const renderContent = () => {
+    if (isLoading) {
+      return <Skeleton height="24px" width="60px" />
+    }
+
+    if (patientData) {
+      const noteCounts = patientData.notes.reduce((acc, note) => {
+        acc[note.note_type] = (acc[note.note_type] || 0) + 1
+        return acc
+      }, {} as Record<string, number>)
+
+      return (
+        <VStack align="center" spacing={2} width="100%">
+          <Text fontSize="2xl" fontWeight="bold" color="blue.500">
+            {patientData.notes.length}
+          </Text>
+          <Wrap justify="center" spacing={2}>
+            {Object.entries(noteCounts).map(([type, count]) => (
+              <WrapItem key={type}>
+                <Badge colorScheme="blue" fontSize="sm" px={2} py={1} borderRadius="full">
+                  {type}: {count}
+                </Badge>
+              </WrapItem>
+            ))}
+          </Wrap>
+        </VStack>
+      )
+    }
+
+    return (
+      <Text fontSize="2xl" fontWeight="bold" color="blue.500">
+        {dbTotalNotes}
+      </Text>
+    )
+  }
+
+  return (
+    <Card bg={cardBgColor} p={6} borderRadius="xl" shadow="md" borderWidth={1} borderColor={borderColor}>
+      <CardBody>
+        <VStack spacing={4} align="center">
+          <Icon as={FaFileAlt} boxSize={10} color="blue.500" />
+          <Heading size="md" textAlign="center">Clinical Notes</Heading>
+          <Center width="100%">
+            {renderContent()}
+          </Center>
+        </VStack>
+      </CardBody>
+    </Card>
+  )
+}
 
 interface ClinicalNotesTableProps {
   notes: ClinicalNote[];

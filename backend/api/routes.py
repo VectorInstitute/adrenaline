@@ -61,50 +61,44 @@ async def get_database_summary(
     Returns
     -------
     Dict[str, Any]
-        A dictionary containing database summary information.
-
-    Raises
-    ------
-    HTTPException
-        If an error occurs during retrieval.
+        The database summary.
     """
     try:
-        total_patients = await db.patients.count_documents({})
-        # Count total notes
-        total_notes = await db.patients.aggregate(
-            [
-                {
-                    "$project": {
-                        "note_count": {
-                            "$cond": [{"$isArray": "$notes"}, {"$size": "$notes"}, 0]
-                        }
-                    }
-                },
-                {"$group": {"_id": None, "total": {"$sum": "$note_count"}}},
-            ]
-        ).next()
-        # Count total QA pairs
-        total_qa_pairs = await db.patients.aggregate(
-            [
-                {
-                    "$project": {
-                        "qa_count": {
-                            "$cond": [
-                                {"$isArray": "$qa_pairs"},
-                                {"$size": "$qa_pairs"},
-                                0,
-                            ]
-                        }
-                    }
-                },
-                {"$group": {"_id": None, "total": {"$sum": "$qa_count"}}},
-            ]
-        ).next()
+        pipeline = [
+            {
+                "$facet": {
+                    "patient_count": [{"$count": "total"}],
+                    "note_count": [
+                        {"$project": {"note_count": {"$size": "$notes"}}},
+                        {"$group": {"_id": None, "total": {"$sum": "$note_count"}}},
+                    ],
+                    "qa_count": [
+                        {
+                            "$project": {
+                                "qa_count": {"$size": {"$ifNull": ["$qa_pairs", []]}}
+                            }
+                        },
+                        {"$group": {"_id": None, "total": {"$sum": "$qa_count"}}},
+                    ],
+                }
+            },
+            {
+                "$project": {
+                    "total_patients": {"$arrayElemAt": ["$patient_count.total", 0]},
+                    "total_notes": {"$arrayElemAt": ["$note_count.total", 0]},
+                    "total_qa_pairs": {"$arrayElemAt": ["$qa_count.total", 0]},
+                }
+            },
+        ]
+
+        result = await db.patients.aggregate(pipeline).next()
+
         summary = {
-            "total_patients": total_patients,
-            "total_notes": total_notes["total"] if total_notes else 0,
-            "total_qa_pairs": total_qa_pairs["total"] if total_qa_pairs else 0,
+            "total_patients": result["total_patients"] or 0,
+            "total_notes": result["total_notes"] or 0,
+            "total_qa_pairs": result["total_qa_pairs"] or 0,
         }
+
         logger.info(f"Database summary: {summary}")
         return summary
     except Exception as e:
@@ -122,7 +116,7 @@ async def get_patient_data(
     current_user: User = Depends(get_current_active_user),  # noqa: B008
 ) -> PatientData:
     """
-    Retrieve all data for a specific patient, including medical notes and QA pairs.
+    Retrieve all data for a specific patient, including clinical notes and QA pairs.
 
     Parameters
     ----------
@@ -136,12 +130,7 @@ async def get_patient_data(
     Returns
     -------
     PatientData
-        A PatientData object containing all patient data.
-
-    Raises
-    ------
-    HTTPException
-        If no data is found or an error occurs during retrieval.
+        The patient data.
     """
     try:
         patient = await db.patients.find_one({"patient_id": patient_id})
@@ -167,67 +156,6 @@ async def get_patient_data(
         ) from e
 
 
-@router.get("/patient_summary/{patient_id}", response_model=Dict[str, Any])
-async def get_patient_summary(
-    patient_id: int,
-    db: AsyncIOMotorDatabase = Depends(get_database),  # noqa: B008
-    current_user: User = Depends(get_current_active_user),  # noqa: B008
-) -> Dict[str, Any]:
-    """
-    Retrieve a summary of patient data, including counts of different note types.
-
-    Parameters
-    ----------
-    patient_id : int
-        The ID of the patient.
-    db : AsyncIOMotorDatabase
-        The database connection.
-    current_user : User
-        The current authenticated user.
-
-    Returns
-    -------
-    Dict[str, Any]
-        A dictionary containing patient summary information.
-
-    Raises
-    ------
-    HTTPException
-        If the patient is not found or an error occurs during retrieval.
-    """
-    try:
-        patient = await db.patients.find_one(
-            {"patient_id": patient_id},
-            projection={
-                "notes": {"$size": "$notes"},
-                "qa_pairs": {"$size": "$qa_pairs"},
-            },
-        )
-
-        if not patient:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"No data found for patient ID {patient_id}",
-            )
-
-        return {
-            "patient_id": patient_id,
-            "notes_count": patient.get("notes", 0),
-            "qa_pairs_count": patient.get("qa_pairs", 0),
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(
-            f"Error retrieving patient summary for patient ID {patient_id}: {str(e)}"
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An error occurred while retrieving patient summary",
-        ) from e
-
-
 @router.get("/patient/{patient_id}/note/{note_id}", response_model=ClinicalNote)
 async def get_patient_note(
     patient_id: int,
@@ -243,7 +171,7 @@ async def get_patient_note(
     patient_id : int
         The ID of the patient.
     note_id : str
-        The ID of the note.
+        The ID of the note to retrieve.
     db : AsyncIOMotorDatabase
         The database connection.
     current_user : User
@@ -252,12 +180,7 @@ async def get_patient_note(
     Returns
     -------
     ClinicalNote
-        The retrieved clinical note.
-
-    Raises
-    ------
-    HTTPException
-        If the note is not found or an error occurs during retrieval.
+        The clinical note.
     """
     try:
         patient = await db.patients.find_one(
@@ -285,22 +208,22 @@ async def get_patient_note(
         ) from e
 
 
-@router.get("/medical_notes/{patient_id}/{note_id}/raw", response_model=str)
-async def get_raw_medical_note(
+@router.get("/patient/{patient_id}/note/{note_id}/raw", response_model=str)
+async def get_raw_clinical_note(
     patient_id: int,
     note_id: str,
     db: AsyncIOMotorDatabase = Depends(get_database),  # noqa: B008
     current_user: User = Depends(get_current_active_user),  # noqa: B008
 ) -> str:
     """
-    Retrieve the raw text of a specific medical note by its ID.
+    Retrieve the raw text of a specific clinical note by its ID.
 
     Parameters
     ----------
     patient_id : int
         The ID of the patient.
     note_id : str
-        The ID of the medical note.
+        The ID of the note to retrieve.
     db : AsyncIOMotorDatabase
         The database connection.
     current_user : User
@@ -309,12 +232,7 @@ async def get_raw_medical_note(
     Returns
     -------
     str
-        The raw text of the retrieved medical note.
-
-    Raises
-    ------
-    HTTPException
-        If the note is not found or an error occurs during retrieval.
+        The raw text of the clinical note.
     """
     try:
         patient = await db.patients.find_one(
@@ -331,10 +249,10 @@ async def get_raw_medical_note(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error retrieving raw medical note with ID {note_id}: {str(e)}")
+        logger.error(f"Error retrieving raw clinical note with ID {note_id}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An error occurred while retrieving the raw medical note",
+            detail="An error occurred while retrieving the raw clinical note",
         ) from e
 
 
@@ -346,7 +264,7 @@ async def extract_entities(
     current_user: User = Depends(get_current_active_user),  # noqa: B008
 ) -> NERResponse:
     """
-    Extract entities from a medical note.
+    Extract entities from a clinical note.
 
     Parameters
     ----------

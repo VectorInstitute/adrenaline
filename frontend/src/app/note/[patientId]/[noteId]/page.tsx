@@ -12,7 +12,7 @@ import Sidebar from '../../../components/sidebar'
 import { withAuth } from '../../../components/with-auth'
 import EntityVisualization from '../../../components/entity-viz'
 import { CopyIcon } from '@chakra-ui/icons'
-import { ClinicalNote, NERResponse, Entity } from '../../../types/patient'
+import { ClinicalNote, NERResponse } from '../../../types/patient'
 
 const fetcher = async (url: string) => {
   const res = await fetch(url, {
@@ -115,7 +115,20 @@ function NotePage() {
 
       const rawNote = await response.text()
 
-      await navigator.clipboard.writeText(rawNote)
+      if (!rawNote) {
+        throw new Error('Raw note text is empty')
+      }
+
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(rawNote)
+      } else {
+        const textArea = document.createElement('textarea')
+        textArea.value = rawNote
+        document.body.appendChild(textArea)
+        textArea.select()
+        document.execCommand('copy')
+        document.body.removeChild(textArea)
+      }
 
       toast({
         title: "Copied",
@@ -128,7 +141,7 @@ function NotePage() {
       console.error('Failed to copy text: ', error)
       toast({
         title: "Error",
-        description: "Failed to copy text to clipboard",
+        description: error instanceof Error ? error.message : "Failed to copy text to clipboard",
         status: "error",
         duration: 2000,
         isClosable: true,
