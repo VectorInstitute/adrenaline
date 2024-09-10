@@ -2,36 +2,17 @@
 
 import React, { useState, useCallback, useMemo } from 'react'
 import {
-  Box,
-  Heading,
-  Text,
-  VStack,
-  useColorModeValue,
-  Flex,
-  Divider,
-  Skeleton,
-  Card,
-  CardHeader,
-  CardBody,
-  Badge,
-  Button,
-  useToast,
-  HStack,
-  Stat,
-  StatLabel,
-  StatNumber,
-  StatGroup,
-  IconButton,
-  Tooltip,
-  Container,
+  Box, Heading, Text, VStack, useColorModeValue, Flex, Divider, Skeleton,
+  Card, CardHeader, CardBody, Badge, Button, useToast, HStack, Stat,
+  StatLabel, StatNumber, StatGroup, IconButton, Tooltip, Container,
 } from '@chakra-ui/react'
 import { useParams } from 'next/navigation'
-import { MedicalNote } from '../../../types/note'
 import useSWR from 'swr'
 import Sidebar from '../../../components/sidebar'
 import { withAuth } from '../../../components/with-auth'
 import EntityVisualization from '../../../components/entity-viz'
 import { CopyIcon } from '@chakra-ui/icons'
+import { ClinicalNote, NERResponse, Entity } from '../../../types/patient'
 
 const fetcher = async (url: string) => {
   const res = await fetch(url, {
@@ -45,41 +26,11 @@ const fetcher = async (url: string) => {
   return res.json()
 }
 
-interface MetaAnnotation {
-  value: string;
-  confidence: number;
-  name: string;
-}
-
-interface Entity {
-  pretty_name: string;
-  cui: string;
-  type_ids: string[];
-  types: string[];
-  source_value: string;
-  detected_name: string;
-  acc: number;
-  context_similarity: number;
-  start: number;
-  end: number;
-  icd10: Array<{ chapter: string; name: string }>;
-  ontologies: string[];
-  snomed: string[];
-  id: number;
-  meta_anns: Record<string, MetaAnnotation>;
-}
-
-interface NERResponse {
-  note_id: string;
-  text: string;
-  entities: Entity[];
-}
-
 function NotePage() {
   const params = useParams()
-  const { collection, noteId } = params
-  const { data: note, error, isLoading } = useSWR<MedicalNote>(
-    collection && noteId ? `/api/medical_notes/${collection}/note/${noteId}` : null,
+  const { patientId, noteId } = params
+  const { data: note, error, isLoading } = useSWR<ClinicalNote>(
+    patientId && noteId ? `/api/patient/${patientId}/note/${noteId}` : null,
     fetcher
   )
   const [nerResponse, setNerResponse] = useState<NERResponse | null>(null)
@@ -93,13 +44,13 @@ function NotePage() {
   const noteBgColor = useColorModeValue('gray.100', 'gray.800')
 
   const extractEntities = useCallback(async () => {
-    if (!collection || !noteId) return
+    if (!patientId || !noteId) return
 
     setIsExtracting(true)
     setNerResponse(null)
 
     try {
-      const response = await fetch(`/api/extract_entities/${collection}/${noteId}`, {
+      const response = await fetch(`/api/extract_entities/${patientId}/${noteId}`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`,
@@ -140,19 +91,19 @@ function NotePage() {
     } finally {
       setIsExtracting(false)
     }
-  }, [collection, noteId, toast])
+  }, [patientId, noteId, toast])
 
   const resetNote = useCallback(() => {
     setNerResponse(null)
   }, [])
 
   const copyToClipboard = useCallback(async () => {
-    if (!collection || !noteId) return
+    if (!patientId || !noteId) return
 
     setIsCopying(true)
 
     try {
-      const response = await fetch(`/api/medical_notes/${collection}/note/${noteId}/raw`, {
+      const response = await fetch(`/api/patient/${patientId}/note/${noteId}/raw`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`,
         },
@@ -185,7 +136,7 @@ function NotePage() {
     } finally {
       setIsCopying(false)
     }
-  }, [collection, noteId, toast])
+  }, [patientId, noteId, toast])
 
   const entityStats = useMemo(() => {
     if (!nerResponse) return [];
@@ -221,16 +172,16 @@ function NotePage() {
     return (
       <Card bg={cardBgColor} shadow="md">
         <CardHeader>
-          <Heading size="md">Medical Note Details</Heading>
+          <Heading size="md">Clinical Note Details</Heading>
         </CardHeader>
         <CardBody>
           <VStack align="stretch" spacing={6}>
             <Flex wrap="wrap" gap={2}>
               <Badge colorScheme="blue">Note ID: {note.note_id}</Badge>
-              <Badge colorScheme="green">Patient ID: {note.patient_id}</Badge>
+              <Badge colorScheme="green">Patient ID: {patientId}</Badge>
               <Badge colorScheme="purple">Encounter ID: {note.encounter_id}</Badge>
-              <Badge colorScheme="cyan">Timestamp: {note.timestamp.toLocaleString()}</Badge>
-              <Badge colorScheme="orange">Collection: {collection}</Badge>
+              <Badge colorScheme="cyan">Timestamp: {new Date(note.timestamp).toLocaleString()}</Badge>
+              <Badge colorScheme="orange">Note Type: {note.note_type}</Badge>
             </Flex>
             <Divider />
             <HStack spacing={4}>
