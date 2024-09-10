@@ -41,6 +41,9 @@ router = APIRouter()
 NER_SERVICE_TIMEOUT = 300  # 5 minutes
 NER_SERVICE_PORT = os.getenv("NER_SERVICE_PORT", "8000")
 NER_SERVICE_URL = f"http://clinical-ner-service-dev:{NER_SERVICE_PORT}/extract_entities"
+LLM_SERVICE_HOST = os.getenv("LLM_SERVICE_HOST")
+LLM_SERVICE_PORT = os.getenv("LLM_SERVICE_PORT", "8080")
+LLM_SERVICE_URL = f"http://{LLM_SERVICE_HOST}:{LLM_SERVICE_PORT}/v1"
 
 
 @router.get("/database_summary", response_model=Dict[str, Any])
