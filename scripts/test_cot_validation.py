@@ -118,18 +118,12 @@ def send_chat_prompt(
 def validate_qa_pair(context: str, question: str, answer: str) -> Dict[str, str]:
     """Validate a QA pair using chain-of-thought reasoning with DSPy."""
     try:
-        # Context Analysis
-        console.print("[bold blue]Analyzing context...[/bold blue]")
-        context_prompt = f"Analyze the following medical context and extract relevant information:\n\nContext: {context}\n\nRelevant Information:"
-        relevant_info = send_chat_prompt(context_prompt)
-        console.print(f"[dim]Relevant Info: {relevant_info[:100]}...[/dim]")
-
         # Answer Validation
         console.print("[bold blue]Validating answer...[/bold blue]")
         validation_prompt = f"""
-        Given the following information, question, and answer, validate the answer using chain of thought reasoning:
+        Given the following context, question, and answer, validate the answer using chain of thought reasoning:
 
-        Relevant Information: {relevant_info}
+        Context: {context}
 
         Question: {question}
 
