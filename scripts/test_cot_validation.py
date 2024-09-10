@@ -1,3 +1,7 @@
+"""
+This script validates the QA pairs for a given patient using a simple reasoning step.
+"""
+
 import asyncio
 import json
 import logging
@@ -94,7 +98,7 @@ def send_chat_prompt(
             messages=[
                 {
                     "role": "system",
-                    "content": "You are a helpful and knowledgeable medical assistant. Provide accurate and concise information about medical conditions and symptoms.",
+                    "content": "You are a helpful and knowledgeable clinical assistant. Provide accurate and concise information about clinical conditions and symptoms.",
                 },
                 {"role": "user", "content": prompt},
             ],
@@ -114,9 +118,8 @@ def send_chat_prompt(
         raise
 
 
-# Chain of Thought Reasoning Function
 def validate_qa_pair(context: str, question: str, answer: str) -> Dict[str, str]:
-    """Validate a QA pair using chain-of-thought reasoning with DSPy."""
+    """Validate a QA pair using a simple reasoning step."""
     try:
         # Answer Validation
         console.print("[bold blue]Validating answer...[/bold blue]")
@@ -182,7 +185,7 @@ def validate_qa_pair(context: str, question: str, answer: str) -> Dict[str, str]
             }
 
     except Exception as e:
-        logger.error(f"Error in chain-of-thought reasoning: {e}")
+        logger.error(f"Error in reasoning: {e}")
         return {
             "question": question,
             "given_answer": answer,
@@ -250,5 +253,5 @@ async def run_validation(patient_id: int):
 
 # Main execution
 if __name__ == "__main__":
-    patient_id = 16740649  # Replace with actual patient ID
+    patient_id = 13074106  # Replace with actual patient ID
     asyncio.run(run_validation(patient_id))
