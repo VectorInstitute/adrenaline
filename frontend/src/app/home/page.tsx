@@ -1,52 +1,24 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import {
-  Box,
-  Text,
-  Flex,
-  Heading,
-  VStack,
-  useColorModeValue,
-  Button,
-  Input,
-  Container,
-  Card,
-  CardBody,
-  SimpleGrid,
-  Icon,
-  Select,
-  Table,
-  Thead,
-  Tbody,
-  Tr,
-  Th,
-  Td,
-  useToast,
-  Skeleton,
-  InputGroup,
-  InputLeftElement,
-  Divider,
-  Tag,
-  Tooltip,
-  Badge,
-  IconButton,
+  Box, Text, Flex, Heading, VStack, useColorModeValue, Button, Input,
+  Container, Card, CardBody, SimpleGrid, Icon, Table, Thead, Tbody, Tr,
+  Th, Td, useToast, Skeleton, InputGroup, InputLeftElement, Divider, Tag,
+  Tooltip, Badge, IconButton, Tabs, TabList, TabPanels, Tab, TabPanel
 } from '@chakra-ui/react'
 import { useRouter } from 'next/navigation'
-import { FaFileAlt, FaUser, FaHospital, FaSearch, FaEye } from 'react-icons/fa'
+import { FaFileAlt, FaUser, FaHospital, FaSearch, FaEye, FaDatabase, FaQuestionCircle } from 'react-icons/fa'
 import Sidebar from '../components/sidebar'
 import { withAuth } from '../components/with-auth'
-import { MedicalNote } from '../types/note'
+import { PatientData, ClinicalNote, QAPair } from '../types/patient'
 
 const HomePage: React.FC = () => {
   const [patientId, setPatientId] = useState<string>('')
-  const [collection, setCollection] = useState<string>('')
-  const [collections, setCollections] = useState<string[]>([])
-  const [medicalNotes, setMedicalNotes] = useState<MedicalNote[]>([])
+  const [patientData, setPatientData] = useState<PatientData | null>(null)
   const [isLoading, setIsLoading] = useState<boolean>(false)
-  const [isLoadingCollections, setIsLoadingCollections] = useState<boolean>(true)
-  const [totalNotes, setTotalNotes] = useState<number>(0)
-  const [isLoadingTotalNotes, setIsLoadingTotalNotes] = useState<boolean>(false)
+  const [dbSummary, setDbSummary] = useState<{ total_patients: number; total_notes: number; total_qa_pairs: number } | null>(null)
+  const [isLoadingDbSummary, setIsLoadingDbSummary] = useState<boolean>(true)
 
   const router = useRouter()
   const toast = useToast()
@@ -57,78 +29,50 @@ const HomePage: React.FC = () => {
   const cardBgColor = useColorModeValue('white', 'gray.800')
   const textColor = useColorModeValue('gray.800', 'gray.100')
   const borderColor = useColorModeValue('gray.200', 'gray.700')
-  const tableBorderColor = useColorModeValue('gray.200', 'gray.600')
-  const tableHoverBg = useColorModeValue('gray.100', 'gray.700')
-  const tableHeaderBg = useColorModeValue('gray.100', 'gray.700')
 
-  useEffect(() => {
-    fetchCollections()
-  }, [])
-
-  useEffect(() => {
-    if (collection) {
-      fetchTotalNotes()
-    }
-  }, [collection])
-
-  const fetchCollections = async () => {
+  const fetchDatabaseSummary = useCallback(async () => {
+    setIsLoadingDbSummary(true);
     try {
-      const response = await fetch('/api/collections', {
+      const response = await fetch('/api/database_summary', {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`,
         },
-      })
+      });
       if (!response.ok) {
-        throw new Error('Failed to fetch collections')
+        throw new Error('Failed to fetch database summary');
       }
-      const data = await response.json()
-      setCollections(data)
-      if (data.length > 0) {
-        setCollection(data[0])
-      }
+      const data = await response.json();
+      console.log('Database summary data:', data);
+      setDbSummary({
+        total_patients: data.total_patients || 0,
+        total_notes: data.total_notes || 0,
+        total_qa_pairs: data.total_qa_pairs || 0,
+      });
     } catch (error) {
-      console.error('Error fetching collections:', error)
+      console.error('Error fetching database summary:', error);
       toast({
         title: "Error",
-        description: "Failed to fetch collections",
+        description: "Failed to fetch database summary",
         status: "error",
         duration: 3000,
         isClosable: true,
-      })
+      });
+      // Set default values in case of error
+      setDbSummary({
+        total_patients: 0,
+        total_notes: 0,
+        total_qa_pairs: 0,
+      });
     } finally {
-      setIsLoadingCollections(false)
+      setIsLoadingDbSummary(false);
     }
-  }
+  }, [toast]);
 
-  const fetchTotalNotes = async () => {
-    setIsLoadingTotalNotes(true)
-    try {
-      const response = await fetch(`/api/total_notes/${collection}`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
-      })
-      if (!response.ok) {
-        throw new Error('Failed to fetch total notes')
-      }
-      const total = await response.json()
-      setTotalNotes(total)
-    } catch (error) {
-      console.error('Error fetching total notes:', error)
-      toast({
-        title: "Error",
-        description: "Failed to fetch total notes",
-        status: "error",
-        duration: 3000,
-        isClosable: true,
-      })
-      setTotalNotes(0)
-    } finally {
-      setIsLoadingTotalNotes(false)
-    }
-  }
+  useEffect(() => {
+    fetchDatabaseSummary()
+  }, [fetchDatabaseSummary])
 
-  const loadMedicalNotes = async () => {
+  const loadPatientData = useCallback(async () => {
     if (!patientId.trim()) {
       toast({
         title: "Error",
@@ -153,17 +97,17 @@ const HomePage: React.FC = () => {
 
     setIsLoading(true)
     try {
-      const response = await fetch(`/api/medical_notes/${collection}/${patientId}`, {
+      const response = await fetch(`/api/patient_data/${patientId}`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`,
         },
       })
 
       if (response.status === 404) {
-        setMedicalNotes([])
+        setPatientData(null)
         toast({
           title: "Info",
-          description: "No clinical notes found for this patient",
+          description: "No data found for this patient",
           status: "info",
           duration: 3000,
           isClosable: true,
@@ -172,36 +116,36 @@ const HomePage: React.FC = () => {
       }
 
       if (!response.ok) {
-        throw new Error('Failed to fetch clinical notes')
+        throw new Error('Failed to fetch patient data')
       }
 
       const data = await response.json()
-      setMedicalNotes(data)
+      setPatientData(data)
       toast({
         title: "Success",
-        description: "Medical notes loaded successfully",
+        description: "Patient data loaded successfully",
         status: "success",
         duration: 3000,
         isClosable: true,
       })
     } catch (error) {
-      console.error('Error loading clinical notes:', error)
+      console.error('Error loading patient data:', error)
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : "An error occurred while loading clinical notes",
+        description: error instanceof Error ? error.message : "An error occurred while loading patient data",
         status: "error",
         duration: 3000,
         isClosable: true,
       })
-      setMedicalNotes([])
+      setPatientData(null)
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [patientId, toast])
 
-  const handleNoteClick = (noteId: string) => {
-    router.push(`/note/${collection}/${noteId}`)
-  }
+  const handleNoteClick = useCallback((noteId: string) => {
+    router.push(`/note/${patientId}/${noteId}`)
+  }, [patientId, router])
 
   return (
     <Flex minHeight="100vh" bg={bgColor}>
@@ -211,44 +155,39 @@ const HomePage: React.FC = () => {
           <VStack spacing={8} align="stretch">
             <Card bg={cardBgColor} p={6} borderRadius="xl" shadow="lg" borderWidth={1} borderColor={borderColor}>
               <CardBody>
-                <Heading as="h1" size="xl" color={primaryColor} mb={4}>Clinical Notes Dashboard</Heading>
-                <Text fontSize="lg" color={textColor}>Load and extract entities from clinical notes.</Text>
+                <Heading as="h1" size="xl" color={primaryColor} mb={4}>Clinical Data Dashboard</Heading>
+                <Text fontSize="lg" color={textColor}>View and analyze patient clinical data.</Text>
               </CardBody>
             </Card>
 
             <SimpleGrid columns={{ base: 1, md: 3 }} spacing={6}>
               <StatCard
+                icon={FaDatabase}
+                title="Total Patients"
+                value={dbSummary?.total_patients ?? 0}
+                color="teal"
+                isLoading={isLoadingDbSummary}
+              />
+              <StatCard
                 icon={FaFileAlt}
                 title="Total Notes"
-                value={medicalNotes.length > 0 ? medicalNotes.length : totalNotes}
-                color="teal"
-                isLoading={isLoadingTotalNotes && medicalNotes.length === 0}
+                value={dbSummary?.total_notes ?? 0}
+                color="blue"
+                isLoading={isLoadingDbSummary}
               />
-              <StatCard icon={FaUser} title="Patient ID" value={patientId || 'N/A'} color="blue" />
-              <StatCard icon={FaHospital} title="Collection" value={collection || 'N/A'} color="purple" />
+              <StatCard
+                icon={FaQuestionCircle}
+                title="Total QA Pairs"
+                value={dbSummary?.total_qa_pairs ?? 0}
+                color="purple"
+                isLoading={isLoadingDbSummary}
+              />
             </SimpleGrid>
 
             <Card bg={cardBgColor} p={6} borderRadius="xl" shadow="lg" borderWidth={1} borderColor={borderColor}>
               <CardBody>
-                <Heading as="h2" size="lg" color={secondaryColor} mb={6}>Load Clinical Notes</Heading>
+                <Heading as="h2" size="lg" color={secondaryColor} mb={6}>Load Patient Data</Heading>
                 <Flex direction={{ base: 'column', md: 'row' }} mb={4} align="center" gap={4}>
-                  <Select
-                    value={collection}
-                    onChange={(e) => setCollection(e.target.value)}
-                    isDisabled={isLoadingCollections}
-                    bg={cardBgColor}
-                    borderColor={borderColor}
-                    _hover={{ borderColor: primaryColor }}
-                    flex={1}
-                  >
-                    {isLoadingCollections ? (
-                      <option>Loading collections...</option>
-                    ) : (
-                      collections.map((col) => (
-                        <option key={col} value={col}>{col}</option>
-                      ))
-                    )}
-                  </Select>
                   <InputGroup flex={1}>
                     <InputLeftElement pointerEvents="none">
                       <Icon as={FaSearch} color="gray.300" />
@@ -264,96 +203,40 @@ const HomePage: React.FC = () => {
                   </InputGroup>
                   <Button
                     colorScheme="teal"
-                    onClick={loadMedicalNotes}
+                    onClick={loadPatientData}
                     isLoading={isLoading}
                     loadingText="Loading..."
                     size="lg"
                     width={{ base: 'full', md: 'auto' }}
                   >
-                    Load Notes
+                    Load Patient Data
                   </Button>
                 </Flex>
               </CardBody>
             </Card>
 
-            <Card bg={cardBgColor} p={6} borderRadius="xl" shadow="lg" borderWidth={1} borderColor={borderColor}>
-              <CardBody>
-                <Heading as="h2" size="lg" color={secondaryColor} mb={6}>Clinical Notes</Heading>
-                {isLoading ? (
-                  <VStack spacing={4}>
-                    {[...Array(5)].map((_, index) => (
-                      <Skeleton key={index} height="60px" width="100%" />
-                    ))}
-                  </VStack>
-                ) : medicalNotes.length > 0 ? (
-                  <Box overflowX="auto">
-                    <Table variant="simple" size="sm">
-                      <Thead>
-                        <Tr bg={tableHeaderBg}>
-                          <Th borderColor={tableBorderColor} color={primaryColor}>Note ID</Th>
-                          <Th borderColor={tableBorderColor} color={primaryColor}>Patient ID</Th>
-                          <Th borderColor={tableBorderColor} color={primaryColor}>Encounter ID</Th>
-                          <Th borderColor={tableBorderColor} color={primaryColor}>Timestamp</Th>
-                          <Th borderColor={tableBorderColor} color={primaryColor}>Text Preview</Th>
-                          <Th borderColor={tableBorderColor} color={primaryColor}>Action</Th>
-                        </Tr>
-                      </Thead>
-                      <Tbody>
-                        {medicalNotes.map((note, index) => (
-                          <React.Fragment key={note.note_id}>
-                            <Tr _hover={{ bg: tableHoverBg }} transition="background-color 0.2s" cursor="pointer" onClick={() => handleNoteClick(note.note_id)}>
-                              <Td borderColor={tableBorderColor}>
-                                <Tag colorScheme="blue" variant="solid">{note.note_id}</Tag>
-                              </Td>
-                              <Td borderColor={tableBorderColor}>
-                                <Badge colorScheme="green">{note.patient_id}</Badge>
-                              </Td>
-                              <Td borderColor={tableBorderColor}>
-                                <Badge colorScheme="purple">
-                                  {note.encounter_id === '-1' ? 'N/A' : note.encounter_id}
-                                </Badge>
-                              </Td>
-                              <Td borderColor={tableBorderColor}>
-                                <Text fontSize="sm" color={textColor}>{new Date(note.timestamp).toLocaleString()}</Text>
-                              </Td>
-                              <Td borderColor={tableBorderColor}>
-                                <Tooltip label={note.text} placement="top" hasArrow>
-                                  <Text fontSize="sm" color={textColor} isTruncated maxWidth="200px">
-                                    {note.text.substring(0, 50)}...
-                                  </Text>
-                                </Tooltip>
-                              </Td>
-                              <Td borderColor={tableBorderColor}>
-                                <IconButton
-                                  aria-label="View note"
-                                  icon={<FaEye />}
-                                  size="sm"
-                                  colorScheme="blue"
-                                  variant="ghost"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleNoteClick(note.note_id);
-                                  }}
-                                />
-                              </Td>
-                            </Tr>
-                            {index < medicalNotes.length - 1 && (
-                              <Tr>
-                                <Td colSpan={6} p={0}>
-                                  <Divider borderColor={tableBorderColor} />
-                                </Td>
-                              </Tr>
-                            )}
-                          </React.Fragment>
-                        ))}
-                      </Tbody>
-                    </Table>
-                  </Box>
-                ) : (
-                  <Text color={textColor}>No clinical notes available. Please load notes for a patient.</Text>
-                )}
-              </CardBody>
-            </Card>
+            {patientData && (
+              <Card bg={cardBgColor} p={6} borderRadius="xl" shadow="lg" borderWidth={1} borderColor={borderColor}>
+                <CardBody>
+                  <Heading as="h2" size="lg" color={secondaryColor} mb={6}>Patient Data</Heading>
+                  <Tabs>
+                    <TabList>
+                      <Tab>Clinical Notes</Tab>
+                      <Tab>QA Pairs</Tab>
+                    </TabList>
+
+                    <TabPanels>
+                      <TabPanel>
+                        <ClinicalNotesTable notes={patientData.notes} handleNoteClick={handleNoteClick} />
+                      </TabPanel>
+                      <TabPanel>
+                        <QAPairsTable qaPairs={patientData.qa_data} />
+                      </TabPanel>
+                    </TabPanels>
+                  </Tabs>
+                </CardBody>
+              </Card>
+            )}
           </VStack>
         </Container>
       </Box>
@@ -370,8 +253,8 @@ interface StatCardProps {
 }
 
 const StatCard: React.FC<StatCardProps> = ({ icon, title, value, color, isLoading = false }) => {
-  const cardBgColor = useColorModeValue('white', 'gray.800')
-  const borderColor = useColorModeValue('gray.200', 'gray.700')
+  const cardBgColor = useColorModeValue('white', 'gray.800');
+  const borderColor = useColorModeValue('gray.200', 'gray.700');
 
   return (
     <Card bg={cardBgColor} p={6} borderRadius="xl" shadow="md" borderWidth={1} borderColor={borderColor}>
@@ -382,11 +265,136 @@ const StatCard: React.FC<StatCardProps> = ({ icon, title, value, color, isLoadin
           {isLoading ? (
             <Skeleton height="24px" width="60px" />
           ) : (
-            <Text fontSize="2xl" fontWeight="bold" color={`${color}.500`}>{value}</Text>
+            <Text fontSize="2xl" fontWeight="bold" color={`${color}.500`}>
+              {value !== undefined ? value : 'N/A'}
+            </Text>
           )}
         </VStack>
       </CardBody>
     </Card>
+  );
+};
+
+interface ClinicalNotesTableProps {
+  notes: ClinicalNote[];
+  handleNoteClick: (noteId: string) => void;
+}
+
+const ClinicalNotesTable: React.FC<ClinicalNotesTableProps> = ({ notes, handleNoteClick }) => {
+  const textColor = useColorModeValue('gray.800', 'gray.100')
+  const tableBorderColor = useColorModeValue('gray.200', 'gray.600')
+  const tableHoverBg = useColorModeValue('gray.100', 'gray.700')
+  const tableHeaderBg = useColorModeValue('gray.100', 'gray.700')
+
+  return (
+    <Box overflowX="auto">
+      <Table variant="simple" size="sm">
+        <Thead>
+          <Tr bg={tableHeaderBg}>
+            <Th borderColor={tableBorderColor}>Note ID</Th>
+            <Th borderColor={tableBorderColor}>Encounter ID</Th>
+            <Th borderColor={tableBorderColor}>Timestamp</Th>
+            <Th borderColor={tableBorderColor}>Note Type</Th>
+            <Th borderColor={tableBorderColor}>Text Preview</Th>
+            <Th borderColor={tableBorderColor}>Action</Th>
+          </Tr>
+        </Thead>
+        <Tbody>
+          {notes.map((note, index) => (
+            <React.Fragment key={note.note_id}>
+              <Tr _hover={{ bg: tableHoverBg }} transition="background-color 0.2s" cursor="pointer" onClick={() => handleNoteClick(note.note_id)}>
+                <Td borderColor={tableBorderColor}>
+                  <Tag colorScheme="blue" variant="solid">{note.note_id}</Tag>
+                </Td>
+                <Td borderColor={tableBorderColor}>
+                  <Badge colorScheme="purple">
+                    {note.encounter_id === '-1' ? 'N/A' : note.encounter_id}
+                  </Badge>
+                </Td>
+                <Td borderColor={tableBorderColor}>
+                  <Text fontSize="sm" color={textColor}>{new Date(note.timestamp).toLocaleString()}</Text>
+                </Td>
+                <Td borderColor={tableBorderColor}>
+                  <Badge colorScheme="green">{note.note_type}</Badge>
+                </Td>
+                <Td borderColor={tableBorderColor}>
+                  <Tooltip label={note.text} placement="top" hasArrow>
+                    <Text fontSize="sm" color={textColor} isTruncated maxWidth="200px">
+                      {note.text.substring(0, 50)}...
+                    </Text>
+                  </Tooltip>
+                </Td>
+                <Td borderColor={tableBorderColor}>
+                  <IconButton
+                    aria-label="View note"
+                    icon={<FaEye />}
+                    size="sm"
+                    colorScheme="blue"
+                    variant="ghost"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleNoteClick(note.note_id);
+                    }}
+                  />
+                </Td>
+              </Tr>
+              {index < notes.length - 1 && (
+                <Tr>
+                  <Td colSpan={6} p={0}>
+                    <Divider borderColor={tableBorderColor} />
+                  </Td>
+                </Tr>
+              )}
+            </React.Fragment>
+          ))}
+        </Tbody>
+      </Table>
+    </Box>
+  )
+}
+
+interface QAPairsTableProps {
+  qaPairs: QAPair[];
+}
+
+const QAPairsTable: React.FC<QAPairsTableProps> = ({ qaPairs }) => {
+  const textColor = useColorModeValue('gray.800', 'gray.100')
+  const tableBorderColor = useColorModeValue('gray.200', 'gray.600')
+  const tableHoverBg = useColorModeValue('gray.100', 'gray.700')
+  const tableHeaderBg = useColorModeValue('gray.100', 'gray.700')
+
+  return (
+    <Box overflowX="auto">
+      <Table variant="simple" size="sm">
+        <Thead>
+          <Tr bg={tableHeaderBg}>
+            <Th borderColor={tableBorderColor}>Question</Th>
+            <Th borderColor={tableBorderColor}>Answer</Th>
+          </Tr>
+        </Thead>
+        <Tbody>
+          {qaPairs.map((qaPair, index) => (
+            <React.Fragment key={index}>
+              <Tr _hover={{ bg: tableHoverBg }} transition="background-color 0.2s">
+                <Td borderColor={tableBorderColor}>
+                  <Text fontSize="sm" color={textColor}>{qaPair.question}</Text>
+                </Td>
+                <Td borderColor={tableBorderColor}>
+                  <Text fontSize="sm" color={textColor}>{qaPair.answer}</Text>
+                </Td>
+              </Tr>
+              {index < qaPairs.length - 1 && (
+                <Tr>
+                  <Td colSpan={2} p={0}>
+                    <Divider borderColor={tableBorderColor} />
+                  </Td>
+                </Tr>
+              )}
+            </React.Fragment>
+          ))}
+        </Tbody>
+      </Table>
+    </Box>
   )
 }
 

@@ -1,36 +1,71 @@
 """Data models for medical notes."""
 
 from datetime import datetime
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
 
-class MedicalNote(BaseModel):
+class QAPair(BaseModel):
     """
-    Represents a medical note.
+    Represents a question-answer pair.
+
+    Attributes
+    ----------
+    question : str
+        The question.
+    answer : str
+        The answer to the question.
+    """
+
+    question: str
+    answer: str
+
+
+class ClinicalNote(BaseModel):
+    """
+    Represents a clinical note.
 
     Attributes
     ----------
     note_id : str
         The unique identifier for the note.
-    subject_id : int
-        The subject (patient) identifier.
-    hadm_id : str
-        The hospital admission identifier.
-    text : str
-        The content of the medical note.
+    encounter_id : str
+        The hospital admission/encounter identifier.
     timestamp : datetime
         The timestamp of the note.
+    text : str
+        The content of the clinical note.
+    note_type : str
+        The type of the note (e.g., DS, AD, RR, AR).
     """
 
     note_id: str = Field(..., description="Unique identifier for the note")
-    patient_id: int = Field(..., description="Patient identifier")
     encounter_id: str = Field(
         ..., description="Hospital admission/encounter identifier"
     )
-    text: str = Field(..., description="Content of the medical note")
     timestamp: datetime = Field(..., description="Timestamp of the note")
+    text: str = Field(..., description="Content of the clinical note")
+    note_type: str = Field(..., description="Type of the note (e.g., DS, AD, RR, AR)")
+
+
+class PatientData(BaseModel):
+    """
+    Represents all data for a patient.
+
+    Attributes
+    ----------
+    patient_id : int
+        The patient identifier.
+    notes : List[ClinicalNote]
+        A list of clinical notes for the patient.
+    qa_data : Optional[List[QAPair]]
+        An optional list of question-answer pairs for the patient.
+    """
+
+    patient_id: int
+    notes: List[ClinicalNote]
+    qa_data: Optional[List[QAPair]] = None
 
 
 class MetaAnnotation(BaseModel):

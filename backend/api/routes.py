@@ -4,16 +4,14 @@ import asyncio
 import logging
 import os
 from datetime import timedelta
-from enum import Enum
 from typing import Any, Dict, List
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import PlainTextResponse
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.notes.data import MedicalNote, NERResponse
+from api.notes.data import ClinicalNote, NERResponse, PatientData, QAPair
 from api.notes.db import get_database
 from api.users.auth import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
@@ -45,26 +43,16 @@ NER_SERVICE_PORT = os.getenv("NER_SERVICE_PORT", "8000")
 NER_SERVICE_URL = f"http://clinical-ner-service-dev:{NER_SERVICE_PORT}/extract_entities"
 
 
-class CollectionName(str, Enum):
-    """Enum for collection names."""
-
-    MIMICIV_DISCHARGE = "mimiciv_discharge_notes"
-    MIMICIV_RADIOLOGY = "mimiciv_radiology_notes"
-
-
-@router.get("/total_notes/{collection}", response_model=int)
-async def get_total_notes(
-    collection: CollectionName,
-    db: AsyncIOMotorDatabase[Any] = Depends(get_database),  # noqa: B008
+@router.get("/database_summary", response_model=Dict[str, Any])
+async def get_database_summary(
+    db: AsyncIOMotorDatabase = Depends(get_database),  # noqa: B008
     current_user: User = Depends(get_current_active_user),  # noqa: B008
-) -> int:
+) -> Dict[str, Any]:
     """
-    Get the total number of notes in a collection.
+    Retrieve a summary of the entire database.
 
     Parameters
     ----------
-    collection : CollectionName
-        The name of the collection to query.
     db : AsyncIOMotorDatabase
         The database connection.
     current_user : User
@@ -72,31 +60,289 @@ async def get_total_notes(
 
     Returns
     -------
-    int
-        The total number of notes in the collection.
+    Dict[str, Any]
+        A dictionary containing database summary information.
+
+    Raises
+    ------
+    HTTPException
+        If an error occurs during retrieval.
     """
     try:
-        # Use estimated_document_count for faster performance
-        total_notes = await db[collection.value].estimated_document_count()
-
-        # If the estimated count is 0, double-check with a precise count
-        if total_notes == 0:
-            total_notes = await db[collection.value].count_documents({})
-
-        return total_notes
+        total_patients = await db.patients.count_documents({})
+        # Count total notes
+        total_notes = await db.patients.aggregate(
+            [
+                {
+                    "$project": {
+                        "note_count": {
+                            "$cond": [{"$isArray": "$notes"}, {"$size": "$notes"}, 0]
+                        }
+                    }
+                },
+                {"$group": {"_id": None, "total": {"$sum": "$note_count"}}},
+            ]
+        ).next()
+        # Count total QA pairs
+        total_qa_pairs = await db.patients.aggregate(
+            [
+                {
+                    "$project": {
+                        "qa_count": {
+                            "$cond": [
+                                {"$isArray": "$qa_pairs"},
+                                {"$size": "$qa_pairs"},
+                                0,
+                            ]
+                        }
+                    }
+                },
+                {"$group": {"_id": None, "total": {"$sum": "$qa_count"}}},
+            ]
+        ).next()
+        summary = {
+            "total_patients": total_patients,
+            "total_notes": total_notes["total"] if total_notes else 0,
+            "total_qa_pairs": total_qa_pairs["total"] if total_qa_pairs else 0,
+        }
+        logger.info(f"Database summary: {summary}")
+        return summary
     except Exception as e:
-        logger.error(f"Error getting total notes count: {str(e)}")
+        logger.error(f"Error retrieving database summary: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An error occurred while fetching the total note count",
+            detail="An error occurred while retrieving database summary",
         ) from e
 
 
-@router.post("/extract_entities/{collection}/{note_id}", response_model=NERResponse)
-async def extract_entities(
-    collection: CollectionName,
+@router.get("/patient_data/{patient_id}", response_model=PatientData)
+async def get_patient_data(
+    patient_id: int,
+    db: AsyncIOMotorDatabase = Depends(get_database),  # noqa: B008
+    current_user: User = Depends(get_current_active_user),  # noqa: B008
+) -> PatientData:
+    """
+    Retrieve all data for a specific patient, including medical notes and QA pairs.
+
+    Parameters
+    ----------
+    patient_id : int
+        The ID of the patient.
+    db : AsyncIOMotorDatabase
+        The database connection.
+    current_user : User
+        The current authenticated user.
+
+    Returns
+    -------
+    PatientData
+        A PatientData object containing all patient data.
+
+    Raises
+    ------
+    HTTPException
+        If no data is found or an error occurs during retrieval.
+    """
+    try:
+        patient = await db.patients.find_one({"patient_id": patient_id})
+
+        if not patient:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No data found for patient ID {patient_id}",
+            )
+
+        notes = [ClinicalNote(**note) for note in patient.get("notes", [])]
+        qa_pairs = [QAPair(**qa) for qa in patient.get("qa_pairs", [])]
+
+        return PatientData(patient_id=patient_id, notes=notes, qa_data=qa_pairs)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving data for patient ID {patient_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while retrieving patient data",
+        ) from e
+
+
+@router.get("/patient_summary/{patient_id}", response_model=Dict[str, Any])
+async def get_patient_summary(
+    patient_id: int,
+    db: AsyncIOMotorDatabase = Depends(get_database),  # noqa: B008
+    current_user: User = Depends(get_current_active_user),  # noqa: B008
+) -> Dict[str, Any]:
+    """
+    Retrieve a summary of patient data, including counts of different note types.
+
+    Parameters
+    ----------
+    patient_id : int
+        The ID of the patient.
+    db : AsyncIOMotorDatabase
+        The database connection.
+    current_user : User
+        The current authenticated user.
+
+    Returns
+    -------
+    Dict[str, Any]
+        A dictionary containing patient summary information.
+
+    Raises
+    ------
+    HTTPException
+        If the patient is not found or an error occurs during retrieval.
+    """
+    try:
+        patient = await db.patients.find_one(
+            {"patient_id": patient_id},
+            projection={
+                "notes": {"$size": "$notes"},
+                "qa_pairs": {"$size": "$qa_pairs"},
+            },
+        )
+
+        if not patient:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No data found for patient ID {patient_id}",
+            )
+
+        return {
+            "patient_id": patient_id,
+            "notes_count": patient.get("notes", 0),
+            "qa_pairs_count": patient.get("qa_pairs", 0),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Error retrieving patient summary for patient ID {patient_id}: {str(e)}"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while retrieving patient summary",
+        ) from e
+
+
+@router.get("/patient/{patient_id}/note/{note_id}", response_model=ClinicalNote)
+async def get_patient_note(
+    patient_id: int,
     note_id: str,
-    db: AsyncIOMotorDatabase[Any] = Depends(get_database),  # noqa: B008
+    db: AsyncIOMotorDatabase = Depends(get_database),  # noqa: B008
+    current_user: User = Depends(get_current_active_user),  # noqa: B008
+) -> ClinicalNote:
+    """
+    Retrieve a specific clinical note for a patient.
+
+    Parameters
+    ----------
+    patient_id : int
+        The ID of the patient.
+    note_id : str
+        The ID of the note.
+    db : AsyncIOMotorDatabase
+        The database connection.
+    current_user : User
+        The current authenticated user.
+
+    Returns
+    -------
+    ClinicalNote
+        The retrieved clinical note.
+
+    Raises
+    ------
+    HTTPException
+        If the note is not found or an error occurs during retrieval.
+    """
+    try:
+        patient = await db.patients.find_one(
+            {"patient_id": patient_id, "notes.note_id": note_id},
+            projection={"notes.$": 1},
+        )
+
+        if not patient or not patient.get("notes"):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Clinical note not found"
+            )
+
+        note = patient["notes"][0]
+        return ClinicalNote(**note)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Error retrieving clinical note for patient ID {patient_id}, note ID {note_id}: {str(e)}"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while retrieving the clinical note",
+        ) from e
+
+
+@router.get("/medical_notes/{patient_id}/{note_id}/raw", response_model=str)
+async def get_raw_medical_note(
+    patient_id: int,
+    note_id: str,
+    db: AsyncIOMotorDatabase = Depends(get_database),  # noqa: B008
+    current_user: User = Depends(get_current_active_user),  # noqa: B008
+) -> str:
+    """
+    Retrieve the raw text of a specific medical note by its ID.
+
+    Parameters
+    ----------
+    patient_id : int
+        The ID of the patient.
+    note_id : str
+        The ID of the medical note.
+    db : AsyncIOMotorDatabase
+        The database connection.
+    current_user : User
+        The current authenticated user.
+
+    Returns
+    -------
+    str
+        The raw text of the retrieved medical note.
+
+    Raises
+    ------
+    HTTPException
+        If the note is not found or an error occurs during retrieval.
+    """
+    try:
+        patient = await db.patients.find_one(
+            {"patient_id": patient_id, "notes.note_id": note_id},
+            projection={"notes.$": 1},
+        )
+
+        if not patient or not patient.get("notes"):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Medical note not found"
+            )
+
+        return patient["notes"][0]["text"]
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving raw medical note with ID {note_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while retrieving the raw medical note",
+        ) from e
+
+
+@router.post("/extract_entities/{patient_id}/{note_id}", response_model=NERResponse)
+async def extract_entities(
+    patient_id: int,
+    note_id: str,
+    db: AsyncIOMotorDatabase = Depends(get_database),  # noqa: B008
     current_user: User = Depends(get_current_active_user),  # noqa: B008
 ) -> NERResponse:
     """
@@ -104,8 +350,8 @@ async def extract_entities(
 
     Parameters
     ----------
-    collection : CollectionName
-        The name of the collection containing the note.
+    patient_id : int
+        The ID of the patient.
     note_id : str
         The ID of the note to process.
     db : AsyncIOMotorDatabase
@@ -125,13 +371,17 @@ async def extract_entities(
     """
     try:
         # Fetch the note from the database
-        note = await db[collection.value].find_one({"note_id": note_id})
+        patient = await db.patients.find_one(
+            {"patient_id": patient_id, "notes.note_id": note_id},
+            projection={"notes.$": 1},
+        )
 
-        if not note:
+        if not patient or not patient.get("notes"):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Medical note not found"
             )
 
+        note = patient["notes"][0]
         original_text = note["text"]
 
         # Call the clinical NER service with increased timeout
@@ -174,206 +424,6 @@ async def extract_entities(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected error occurred while processing the request",
-        ) from e
-
-
-@router.get("/collections", response_model=List[str])
-async def get_collections(
-    db: AsyncIOMotorDatabase[Any] = Depends(get_database),  # noqa: B008
-    current_user: User = Depends(get_current_active_user),  # noqa: B008
-) -> List[str]:
-    """
-    Retrieve a list of available collections.
-
-    Parameters
-    ----------
-    db : AsyncIOMotorDatabase
-        The database connection.
-    current_user : User
-        The current authenticated user.
-
-    Returns
-    -------
-    List[str]
-        A list of collection names.
-
-    Raises
-    ------
-    HTTPException
-        If an error occurs during retrieval.
-    """
-    try:
-        collections = await db.list_collection_names()
-        return [col for col in collections if col.startswith("mimiciv_")]
-    except Exception as e:
-        logger.error(f"Error retrieving collections: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An error occurred while retrieving collections",
-        ) from e
-
-
-@router.get(
-    "/medical_notes/{collection}/{patient_id}", response_model=List[MedicalNote]
-)
-async def get_medical_notes(
-    collection: CollectionName,
-    patient_id: str,
-    db: AsyncIOMotorDatabase[Any] = Depends(get_database),  # noqa: B008
-    current_user: User = Depends(get_current_active_user),  # noqa: B008
-) -> List[MedicalNote]:
-    """
-    Retrieve medical notes for a specific patient from a specific collection.
-
-    Parameters
-    ----------
-    collection : CollectionName
-        The name of the collection to query.
-    patient_id : str
-        The ID of the patient.
-    db : AsyncIOMotorDatabase
-        The database connection.
-    current_user : User
-        The current authenticated user.
-
-    Returns
-    -------
-    List[MedicalNote]
-        A list of medical notes for the patient.
-
-    Raises
-    ------
-    HTTPException
-        If the patient ID is invalid, no notes are found, or an error during retrieval.
-    """
-    try:
-        patient_id_int = int(patient_id)
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid patient ID format. Must be an integer.",
-        ) from e
-
-    try:
-        cursor = db[collection.value].find({"patient_id": patient_id_int})
-        notes = await cursor.to_list(length=None)
-
-        if not notes:
-            logger.info(f"No medical notes found for patient ID {patient_id_int}")
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"No medical notes found for patient ID {patient_id_int}",
-            )
-
-        return [MedicalNote(**note) for note in notes]
-    except HTTPException as he:
-        # Re-raise HTTP exceptions (including our 404)
-        raise he
-    except Exception as e:
-        logger.error(
-            f"Error retrieving medical notes for patient ID {patient_id_int}: {str(e)}"
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An error occurred while retrieving medical notes",
-        ) from e
-
-
-@router.get("/medical_notes/{collection}/note/{note_id}", response_model=MedicalNote)
-async def get_medical_note(
-    collection: CollectionName,
-    note_id: str,
-    db: AsyncIOMotorDatabase[Any] = Depends(get_database),  # noqa: B008
-    current_user: User = Depends(get_current_active_user),  # noqa: B008
-) -> MedicalNote:
-    """
-    Retrieve a specific medical note by its ID from a specific collection.
-
-    Parameters
-    ----------
-    collection : CollectionName
-        The name of the collection to query.
-    note_id : str
-        The ID of the medical note.
-    db : AsyncIOMotorDatabase
-        The database connection.
-    current_user : User
-        The current authenticated user.
-
-    Returns
-    -------
-    MedicalNote
-        The retrieved medical note.
-
-    Raises
-    ------
-    HTTPException
-        If the note is not found or an error occurs during retrieval.
-    """
-    try:
-        note = await db[collection.value].find_one({"note_id": note_id})
-
-        if not note:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Medical note not found"
-            )
-
-        return MedicalNote(**note)
-    except Exception as e:
-        logger.error(f"Error retrieving medical note with ID {note_id}: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An error occurred while retrieving the medical note",
-        ) from e
-
-
-@router.get(
-    "/medical_notes/{collection}/note/{note_id}/raw", response_class=PlainTextResponse
-)
-async def get_raw_medical_note(
-    collection: CollectionName,
-    note_id: str,
-    db: AsyncIOMotorDatabase[Any] = Depends(get_database),  # noqa: B008
-    current_user: User = Depends(get_current_active_user),  # noqa: B008
-) -> str:
-    """
-    Retrieve the raw text of a specific medical note by its ID.
-
-    Parameters
-    ----------
-    collection : CollectionName
-        The name of the collection to query.
-    note_id : str
-        The ID of the medical note.
-    db : AsyncIOMotorDatabase
-        The database connection.
-    current_user : User
-        The current authenticated user.
-
-    Returns
-    -------
-    str
-        The raw text of the retrieved medical note.
-
-    Raises
-    ------
-    HTTPException
-        If the note is not found or an error occurs during retrieval.
-    """
-    try:
-        note = await db[collection.value].find_one({"note_id": note_id})
-
-        if not note:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Medical note not found"
-            )
-
-        return str(note["text"])
-    except Exception as e:
-        logger.error(f"Error retrieving raw medical note with ID {note_id}: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An error occurred while retrieving the raw medical note",
         ) from e
 
 
