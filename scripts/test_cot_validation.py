@@ -3,6 +3,7 @@ This script validates QA pairs for all patients with QA data, using a structured
 """
 
 import os
+import re
 import asyncio
 import json
 import logging
@@ -29,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 # Constants
 BACKEND_BASE_URL = "http://localhost:8002"
-LLM_BASE_URL = "http://gpu039:8080/v1"
+LLM_BASE_URL = "http://gpu031:8080/v1"
 USERNAME = "admin"
 PASSWORD = "admin_password"
 MONGO_URI = "mongodb://root:password@cyclops.cluster.local:27017"
@@ -184,29 +185,50 @@ def validate_qa_pair(context: str, question: str, answer: str) -> Dict[str, str]
         validation_result = send_chat_prompt(validation_prompt)
         logger.debug(f"Raw LLM Response: {validation_result[:100]}...")
 
-        parsed_result = ValidationResult(**json.loads(validation_result))
+        # Try to parse the JSON response
+        try:
+            parsed_result = json.loads(validation_result)
+        except json.JSONDecodeError:
+            # If JSON parsing fails, try to extract the JSON part
+            json_match = re.search(r"\{.*\}", validation_result, re.DOTALL)
+            if json_match:
+                try:
+                    parsed_result = json.loads(json_match.group())
+                except json.JSONDecodeError:
+                    raise ValueError("Unable to parse LLM response as JSON")
+            else:
+                raise ValueError("No valid JSON found in LLM response")
+
+        # Validate the parsed result
+        if not isinstance(parsed_result, dict):
+            raise ValueError("Parsed result is not a dictionary")
+
+        required_keys = ["is_correct", "reasoning", "correct_answer"]
+        if not all(key in parsed_result for key in required_keys):
+            raise ValueError("Parsed result is missing required keys")
+
+        # Convert reasoning to list of strings if it's a list of dicts
+        if isinstance(parsed_result["reasoning"], list) and all(
+            isinstance(step, dict) for step in parsed_result["reasoning"]
+        ):
+            parsed_result["reasoning"] = [
+                step["content"] for step in parsed_result["reasoning"]
+            ]
+
         logger.info(
-            f"QA pair validation complete - Is Correct: {parsed_result.is_correct}"
+            f"QA pair validation complete - Is Correct: {parsed_result['is_correct']}"
         )
 
         return {
             "question": question,
             "given_answer": answer,
-            "is_correct": parsed_result.is_correct,
-            "reasoning": [step.content for step in parsed_result.reasoning],
-            "correct_answer": parsed_result.correct_answer,
-        }
-    except json.JSONDecodeError:
-        logger.error("Failed to parse LLM response as JSON")
-        return {
-            "question": question,
-            "given_answer": answer,
-            "is_correct": False,
-            "reasoning": ["Error: Unable to parse LLM response"],
-            "correct_answer": "Unable to determine",
+            "is_correct": parsed_result["is_correct"],
+            "reasoning": parsed_result["reasoning"],
+            "correct_answer": parsed_result["correct_answer"],
         }
     except Exception as e:
         logger.error(f"Error in reasoning: {e}")
+        logger.debug(f"Problematic LLM response: {validation_result}")
         return {
             "question": question,
             "given_answer": answer,
