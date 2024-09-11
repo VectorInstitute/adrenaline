@@ -4,7 +4,7 @@ from rich.panel import Panel
 import backoff
 
 # Set the base URL for the API
-BASE_URL = "http://gpu043:8080/v1"
+BASE_URL = "http://gpu039:8080/v1"
 
 # Initialize the OpenAI client
 client = OpenAI(base_url=BASE_URL, api_key="EMPTY")
