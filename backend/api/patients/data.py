@@ -1,4 +1,4 @@
-"""Data models for medical notes."""
+"""Data models for patient data."""
 
 from datetime import datetime
 from typing import Dict, List, Optional
@@ -49,6 +49,34 @@ class ClinicalNote(BaseModel):
     note_type: str = Field(..., description="Type of the note (e.g., DS, AD, RR, AR)")
 
 
+class Event(BaseModel):
+    """
+    Represents an event in a patient's medical history.
+
+    Attributes
+    ----------
+    patient_id : int
+        The patient identifier.
+    encounter_id : Optional[str]
+        The hospital admission/encounter identifier.
+    code : str
+        The code of the event.
+    timestamp : Optional[datetime]
+        The timestamp of the event.
+    numeric_value : Optional[float]
+        The numeric value of the event.
+    text_value : Optional[str]
+        The text value of the event.
+    """
+
+    patient_id: int
+    encounter_id: Optional[str]
+    code: str
+    timestamp: Optional[datetime]
+    numeric_value: Optional[float]
+    text_value: Optional[str]
+
+
 class PatientData(BaseModel):
     """
     Represents all data for a patient.
@@ -61,11 +89,14 @@ class PatientData(BaseModel):
         A list of clinical notes for the patient.
     qa_data : Optional[List[QAPair]]
         An optional list of question-answer pairs for the patient.
+    events : List[Event]
+        A list of events in the patient's medical history.
     """
 
     patient_id: int
     notes: List[ClinicalNote]
     qa_data: Optional[List[QAPair]] = None
+    events: List[Event]
 
 
 class MetaAnnotation(BaseModel):

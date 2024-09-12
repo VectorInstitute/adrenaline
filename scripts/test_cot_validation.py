@@ -7,7 +7,7 @@ import re
 import asyncio
 import json
 import logging
-from typing import List, Dict
+from typing import List, Dict, Any
 import requests
 from pydantic import BaseModel, Field
 from openai import OpenAI
@@ -128,7 +128,7 @@ def send_chat_prompt(
             messages=[
                 {
                     "role": "system",
-                    "content": "You are a highly skilled clinical assistant tasked with validating question-answer pairs based on given context. Provide detailed, step-by-step reasoning for your conclusions.",
+                    "content": "You are a highly skilled clinical assistant tasked with validating question-answer pairs based on given context. Provide detailed, step-by-step reasoning for your conclusions. Always return your response in valid JSON format.",
                 },
                 {"role": "user", "content": prompt},
             ],
@@ -149,7 +149,64 @@ def send_chat_prompt(
         raise
 
 
-def validate_qa_pair(context: str, question: str, answer: str) -> Dict[str, str]:
+def construct_json_from_text(text: str) -> Dict[str, Any]:
+    """Attempt to construct a JSON object from unstructured text."""
+    constructed_json = {}
+
+    # Try to extract is_correct
+    is_correct_match = re.search(r'is_correct["\s:]+(\w+)', text, re.IGNORECASE)
+    if is_correct_match:
+        is_correct = is_correct_match.group(1).lower() == "true"
+        constructed_json["is_correct"] = is_correct
+
+    # Try to extract reasoning
+    reasoning_matches = re.findall(
+        r'step_number["\s:]+(\d+)[,\s]*content["\s:]+(.+?)(?=step_number|\Z)',
+        text,
+        re.DOTALL | re.IGNORECASE,
+    )
+    if reasoning_matches:
+        constructed_json["reasoning"] = [
+            {"step_number": int(num), "content": content.strip()}
+            for num, content in reasoning_matches
+        ]
+
+    # Try to extract correct_answer
+    correct_answer_match = re.search(
+        r'correct_answer["\s:]+(.+?)(?=\Z|\})', text, re.DOTALL | re.IGNORECASE
+    )
+    if correct_answer_match:
+        constructed_json["correct_answer"] = correct_answer_match.group(1).strip()
+
+    return constructed_json if len(constructed_json) >= 2 else {}
+
+
+def extract_json_from_response(response: str) -> Dict[str, Any]:
+    """Extract and parse JSON from the LLM response."""
+    try:
+        # First, try to parse the entire response as JSON
+        return json.loads(response)
+    except json.JSONDecodeError:
+        # If that fails, try to extract JSON using a simpler regex
+        json_pattern = r"\{(?:[^{}]|(?:\{[^{}]*\}))*\}"
+        json_matches = re.findall(json_pattern, response, re.DOTALL)
+
+        for match in json_matches:
+            try:
+                return json.loads(match)
+            except json.JSONDecodeError:
+                continue
+
+        # If no valid JSON is found, try to construct a JSON from the response
+        constructed_json = construct_json_from_text(response)
+        if constructed_json:
+            return constructed_json
+
+        # If all else fails, raise an error
+        raise ValueError("No valid JSON found in LLM response")
+
+
+def validate_qa_pair(context: str, question: str, answer: str) -> Dict[str, Any]:
     """Validate a QA pair using structured chain-of-thought reasoning."""
     try:
         logger.info(f"Validating QA pair - Question: {question[:50]}...")
@@ -180,51 +237,43 @@ def validate_qa_pair(context: str, question: str, answer: str) -> Dict[str, str]
             ],
             "correct_answer": "Provide the correct answer if the given answer was incorrect, otherwise leave this empty"
         }}
+
+        Ensure that your response is a valid JSON object.
         """
 
         validation_result = send_chat_prompt(validation_prompt)
         logger.debug(f"Raw LLM Response: {validation_result[:100]}...")
 
-        # Try to parse the JSON response
-        try:
-            parsed_result = json.loads(validation_result)
-        except json.JSONDecodeError:
-            # If JSON parsing fails, try to extract the JSON part
-            json_match = re.search(r"\{.*\}", validation_result, re.DOTALL)
-            if json_match:
-                try:
-                    parsed_result = json.loads(json_match.group())
-                except json.JSONDecodeError:
-                    raise ValueError("Unable to parse LLM response as JSON")
-            else:
-                raise ValueError("No valid JSON found in LLM response")
+        parsed_result = extract_json_from_response(validation_result)
 
-        # Validate the parsed result
-        if not isinstance(parsed_result, dict):
-            raise ValueError("Parsed result is not a dictionary")
+        # Validate and sanitize the parsed result
+        sanitized_result = {
+            "is_correct": parsed_result.get("is_correct", False),
+            "reasoning": [],
+            "correct_answer": parsed_result.get("correct_answer", ""),
+        }
 
-        required_keys = ["is_correct", "reasoning", "correct_answer"]
-        if not all(key in parsed_result for key in required_keys):
-            raise ValueError("Parsed result is missing required keys")
-
-        # Convert reasoning to list of strings if it's a list of dicts
-        if isinstance(parsed_result["reasoning"], list) and all(
-            isinstance(step, dict) for step in parsed_result["reasoning"]
-        ):
-            parsed_result["reasoning"] = [
-                step["content"] for step in parsed_result["reasoning"]
+        reasoning = parsed_result.get("reasoning", [])
+        if isinstance(reasoning, list):
+            sanitized_result["reasoning"] = [
+                step["content"]
+                if isinstance(step, dict) and "content" in step
+                else str(step)
+                for step in reasoning
             ]
+        elif isinstance(reasoning, str):
+            sanitized_result["reasoning"] = [reasoning]
 
         logger.info(
-            f"QA pair validation complete - Is Correct: {parsed_result['is_correct']}"
+            f"QA pair validation complete - Is Correct: {sanitized_result['is_correct']}"
         )
 
         return {
             "question": question,
             "given_answer": answer,
-            "is_correct": parsed_result["is_correct"],
-            "reasoning": parsed_result["reasoning"],
-            "correct_answer": parsed_result["correct_answer"],
+            "is_correct": sanitized_result["is_correct"],
+            "reasoning": sanitized_result["reasoning"],
+            "correct_answer": sanitized_result["correct_answer"],
         }
     except Exception as e:
         logger.error(f"Error in reasoning: {e}")
@@ -318,6 +367,12 @@ async def run_validation():
         for i, patient_id in enumerate(patients_with_qa, 1):
             if patient_id in results_by_patient:
                 patient_results = results_by_patient[patient_id]
+                if not result["reasoning"]:
+                    logger.info(f"Skipping patient {patient_id} (no reasoning)")
+                    console.print(
+                        f"[yellow]Skipping patient {patient_id} (no reasoning)[/yellow]"
+                    )
+                    continue
                 if all(
                     result["is_correct"] and "Error" not in result["reasoning"][0]
                     for result in patient_results

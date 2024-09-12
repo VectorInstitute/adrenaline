@@ -11,8 +11,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.notes.data import ClinicalNote, NERResponse, PatientData, QAPair
-from api.notes.db import get_database
+from api.patients.data import ClinicalNote, NERResponse, PatientData, QAPair
+from api.patients.db import get_database
+from api.patients.ehr import fetch_patient_events, init_lazy_df
 from api.users.auth import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
     authenticate_user,
@@ -44,6 +45,12 @@ NER_SERVICE_URL = f"http://clinical-ner-service-dev:{NER_SERVICE_PORT}/extract_e
 LLM_SERVICE_HOST = os.getenv("LLM_SERVICE_HOST")
 LLM_SERVICE_PORT = os.getenv("LLM_SERVICE_PORT", "8080")
 LLM_SERVICE_URL = f"http://{LLM_SERVICE_HOST}:{LLM_SERVICE_PORT}/v1"
+MEDS_DATA_DIR = os.getenv(
+    "MEDS_DATA_DIR", "/mnt/data/odyssey/meds/merge_to_MEDS_cohort/train"
+)
+
+# Initialize the lazy DataFrame
+init_lazy_df(MEDS_DATA_DIR)
 
 
 @router.get("/database_summary", response_model=Dict[str, Any])
@@ -119,7 +126,7 @@ async def get_patient_data(
     current_user: User = Depends(get_current_active_user),  # noqa: B008
 ) -> PatientData:
     """
-    Retrieve all data for a specific patient, including clinical notes and QA pairs.
+    Retrieve all data for a specific patient, i.e. clinical notes, QA pairs, and events.
 
     Parameters
     ----------
@@ -147,7 +154,12 @@ async def get_patient_data(
         notes = [ClinicalNote(**note) for note in patient.get("notes", [])]
         qa_pairs = [QAPair(**qa) for qa in patient.get("qa_pairs", [])]
 
-        return PatientData(patient_id=patient_id, notes=notes, qa_data=qa_pairs)
+        # Fetch events data
+        events = fetch_patient_events(patient_id)
+
+        return PatientData(
+            patient_id=patient_id, notes=notes, qa_data=qa_pairs, events=events
+        )
 
     except HTTPException:
         raise

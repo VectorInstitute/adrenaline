@@ -7,7 +7,7 @@ from typing import Dict
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.notes.db import check_database_connection
+from api.patients.db import check_database_connection
 from api.routes import router as api_router
 from api.users.crud import create_initial_admin
 from api.users.db import get_async_session, init_db

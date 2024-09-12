@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-MEDCAT_MODELS_DIR = "/app/medcat_models"
+MEDCAT_MODELS_DIR = os.getenv("MEDCAT_MODELS_DIR", "/app/medcat_models")
 SELECTED_MODEL = os.getenv(
     "SELECTED_MEDCAT_MODEL", "umls_sm_pt2ch_533bab5115c6c2d6.zip"
 )
