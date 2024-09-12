@@ -15,6 +15,16 @@ export interface ClinicalNote {
     patient_id: number;
     notes: ClinicalNote[];
     qa_data: QAPair[];
+    events: Event[];
+  }
+
+  export interface Event {
+    patient_id: number;
+    encounter_id: string;
+    code: string;
+    timestamp: string;
+    numeric_value: number;
+    text_value: string;
   }
 
   export interface MetaAnnotation {

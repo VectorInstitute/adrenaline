@@ -3457,6 +3457,47 @@ dev = ["pre-commit", "tox"]
 testing = ["pytest", "pytest-benchmark"]
 
 [[package]]
+name = "polars-lts-cpu"
+version = "1.7.0"
+description = "Blazingly fast DataFrame library"
+optional = false
+python-versions = ">=3.8"
+files = [
+    {file = "polars_lts_cpu-1.7.0-cp38-abi3-macosx_10_12_x86_64.whl", hash = "sha256:9459d2ff90aa7a76f3fa96311774e696f51057a9cde0305d0998879f46efab64"},
+    {file = "polars_lts_cpu-1.7.0-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:1f3a9ca09ac9162f6a472ae563fa1695271fe0790e4f95cd447bd3bc1bf05791"},
+    {file = "polars_lts_cpu-1.7.0-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:02efa72d790e859b294e831fda7943399c690787fb36302adce6d9087328c88b"},
+    {file = "polars_lts_cpu-1.7.0-cp38-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:d1bae3796ff9d76e57264d74877ed7e5a2ad66e585fa6e078cb5a49d20412a87"},
+    {file = "polars_lts_cpu-1.7.0-cp38-abi3-win_amd64.whl", hash = "sha256:3adf4edf2b67df42de94ffbd67c9341de863e5a27c6edbf28146fcfaa2f7a699"},
+    {file = "polars_lts_cpu-1.7.0.tar.gz", hash = "sha256:f69febff1b65b19820af95b8daee8aeb708be976c94d032caaa13e7e1809fdc9"},
+]
+
+[package.extras]
+adbc = ["adbc-driver-manager[dbapi]", "adbc-driver-sqlite[dbapi]"]
+all = ["polars-lts-cpu[async,cloudpickle,database,deltalake,excel,fsspec,graph,iceberg,numpy,pandas,plot,pyarrow,pydantic,style,timezone]"]
+async = ["gevent"]
+calamine = ["fastexcel (>=0.9)"]
+cloudpickle = ["cloudpickle"]
+connectorx = ["connectorx (>=0.3.2)"]
+database = ["nest-asyncio", "polars-lts-cpu[adbc,connectorx,sqlalchemy]"]
+deltalake = ["deltalake (>=0.15.0)"]
+excel = ["polars-lts-cpu[calamine,openpyxl,xlsx2csv,xlsxwriter]"]
+fsspec = ["fsspec"]
+gpu = ["cudf-polars-cu12"]
+graph = ["matplotlib"]
+iceberg = ["pyiceberg (>=0.5.0)"]
+numpy = ["numpy (>=1.16.0)"]
+openpyxl = ["openpyxl (>=3.0.0)"]
+pandas = ["pandas", "polars-lts-cpu[pyarrow]"]
+plot = ["altair (>=5.4.0)"]
+pyarrow = ["pyarrow (>=7.0.0)"]
+pydantic = ["pydantic"]
+sqlalchemy = ["polars-lts-cpu[pandas]", "sqlalchemy"]
+style = ["great-tables (>=0.8.0)"]
+timezone = ["backports-zoneinfo", "tzdata"]
+xlsx2csv = ["xlsx2csv (>=0.8.0)"]
+xlsxwriter = ["xlsxwriter"]
+
+[[package]]
 name = "pre-commit"
 version = "2.21.0"
 description = "A framework for managing and maintaining multi-language pre-commit hooks."
@@ -6379,4 +6420,4 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.11, <3.12"
-content-hash = "b1c2cf4b27c53d38631dea18184292b81929fb4ec157045f22042f95a09a75d5"
+content-hash = "639010280edcad2022c2f300c8a88928079378c29de221c8debf142ade97ad56"

@@ -35,10 +35,11 @@ services:
       - "${NER_SERVICE_PORT}:${NER_SERVICE_PORT}"
     environment:
       - NER_SERVICE_PORT=${NER_SERVICE_PORT}
+      - MEDCAT_MODELS_DIR=${MEDCAT_MODELS_DIR}
       - SELECTED_MEDCAT_MODEL=${SELECTED_MEDCAT_MODEL:-umls_sm_pt2ch_533bab5115c6c2d6.zip}
     volumes:
       - ./backend/clinical_ner_service:/app
-      - /mnt/data/medcat:/app/medcat_models:ro
+      - ${MEDCAT_MODELS_DIR}:${MEDCAT_MODELS_DIR}:ro
     networks:
       - app-network
 
@@ -63,8 +64,12 @@ services:
       - MONGO_PASSWORD=${MONGO_PASSWORD}
       - MONGO_HOST=mongodb
       - MONGO_PORT=27017
+      - MEDS_DATA_DIR=${MEDS_DATA_DIR}
+      - LLM_SERVICE_HOST=${LLM_SERVICE_HOST}
+      - LLM_SERVICE_PORT=${LLM_SERVICE_PORT}
     volumes:
       - ./backend:/app
+      - ${MEDS_DATA_DIR}:${MEDS_DATA_DIR}:ro
     networks:
       - app-network
     depends_on:
