@@ -55,7 +55,7 @@ init_lazy_df(MEDS_DATA_DIR)
 
 @router.get("/database_summary", response_model=Dict[str, Any])
 async def get_database_summary(
-    db: AsyncIOMotorDatabase = Depends(get_database),  # noqa: B008
+    db: AsyncIOMotorDatabase[Any] = Depends(get_database),  # noqa: B008
     current_user: User = Depends(get_current_active_user),  # noqa: B008
 ) -> Dict[str, Any]:
     """
@@ -122,7 +122,7 @@ async def get_database_summary(
 @router.get("/patient_data/{patient_id}", response_model=PatientData)
 async def get_patient_data(
     patient_id: int,
-    db: AsyncIOMotorDatabase = Depends(get_database),  # noqa: B008
+    db: AsyncIOMotorDatabase[Any] = Depends(get_database),  # noqa: B008
     current_user: User = Depends(get_current_active_user),  # noqa: B008
 ) -> PatientData:
     """
@@ -175,7 +175,7 @@ async def get_patient_data(
 async def get_patient_note(
     patient_id: int,
     note_id: str,
-    db: AsyncIOMotorDatabase = Depends(get_database),  # noqa: B008
+    db: AsyncIOMotorDatabase[Any] = Depends(get_database),  # noqa: B008
     current_user: User = Depends(get_current_active_user),  # noqa: B008
 ) -> ClinicalNote:
     """
@@ -227,7 +227,7 @@ async def get_patient_note(
 async def get_raw_clinical_note(
     patient_id: int,
     note_id: str,
-    db: AsyncIOMotorDatabase = Depends(get_database),  # noqa: B008
+    db: AsyncIOMotorDatabase[Any] = Depends(get_database),  # noqa: B008
     current_user: User = Depends(get_current_active_user),  # noqa: B008
 ) -> str:
     """
@@ -275,7 +275,7 @@ async def get_raw_clinical_note(
 async def extract_entities(
     patient_id: int,
     note_id: str,
-    db: AsyncIOMotorDatabase = Depends(get_database),  # noqa: B008
+    db: AsyncIOMotorDatabase[Any] = Depends(get_database),  # noqa: B008
     current_user: User = Depends(get_current_active_user),  # noqa: B008
 ) -> NERResponse:
     """

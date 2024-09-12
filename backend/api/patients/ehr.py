@@ -22,7 +22,7 @@ class EHRDataManager:
         The lazy DataFrame containing the EHR data.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the EHRDataManager."""
         self.lazy_df: Optional[pl.LazyFrame] = None
 
@@ -118,7 +118,7 @@ class EHRDataManager:
 
 
 # Create a single instance of EHRDataManager
-ehr_data_manager = EHRDataManager()
+ehr_data_manager: EHRDataManager = EHRDataManager()
 
 
 # Use these functions to interact with the EHRDataManager

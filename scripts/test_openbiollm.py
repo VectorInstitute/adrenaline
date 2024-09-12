@@ -2,6 +2,7 @@ from openai import OpenAI
 from rich.console import Console
 from rich.panel import Panel
 import backoff
+from typing import Any
 
 # Set the base URL for the API
 BASE_URL = "http://gpu039:8080/v1"
@@ -16,7 +17,7 @@ console = Console()
 @backoff.on_exception(backoff.expo, Exception, max_tries=3)
 def send_chat_prompt(
     prompt: str, model: str = "Llama3-OpenBioLLM-70B", max_tokens: int = 1024
-) -> dict:
+) -> Any:
     """Send a prompt to the chat completions endpoint with retries."""
     try:
         completion = client.chat.completions.create(
@@ -44,7 +45,7 @@ def send_chat_prompt(
         raise
 
 
-def display_response(response):
+def display_response(response: dict) -> None:
     """Display the response in a formatted manner."""
     if response and response.choices:
         text = response.choices[0].message.content.strip()

@@ -42,7 +42,7 @@ console = Console()
 client = OpenAI(base_url=LLM_BASE_URL, api_key="EMPTY")
 
 # Initialize MongoDB client
-mongo_client = AsyncIOMotorClient(MONGO_URI)
+mongo_client: AsyncIOMotorClient[Any] = AsyncIOMotorClient(MONGO_URI)
 db = mongo_client[DB_NAME]
 patients_collection = db.patients
 
@@ -316,7 +316,7 @@ async def validate_patient_qa_pairs(
         raise
 
 
-async def get_patients_with_qa_pairs():
+async def get_patients_with_qa_pairs() -> List[int]:
     """Fetch all patients that have QA pairs."""
     logger.info("Fetching patients with QA pairs")
     cursor = patients_collection.find(
@@ -345,7 +345,7 @@ def load_results() -> List[Dict[str, str]]:
     return []
 
 
-async def run_validation():
+async def run_validation() -> None:
     """Run the validation pipeline for all patients with QA pairs."""
     try:
         logger.info("Starting validation process")
@@ -354,7 +354,7 @@ async def run_validation():
         total_patients = len(patients_with_qa)
 
         all_results = load_results()
-        results_by_patient = {}
+        results_by_patient: Dict[int, List[Dict[str, Any]]] = {}
         for result in all_results:
             patient_id = result["patient_id"]
             if patient_id not in results_by_patient:

@@ -22,7 +22,7 @@ interface DatabaseSummary {
   total_patients: number;
   total_notes: number;
   total_qa_pairs: number;
-  total_events: number;
+  total_events: 'N/A';  // Changed to 'N/A'
 }
 
 const fetcher = (url: string) => fetch(url, {
@@ -138,6 +138,13 @@ const HomePage: React.FC = () => {
         color="teal"
         isLoading={!dbSummary && !dbSummaryError}
       />
+      <StatCard
+        icon={FaCalendarAlt}
+        title="Events"
+        value={patientData ? patientData.events?.length ?? 0 : 'N/A'}
+        color="orange"
+        isLoading={!dbSummary && !dbSummaryError}
+      />
       <ClinicalNotesCard
         patientData={patientData}
         dbTotalNotes={dbSummary?.total_notes ?? 0}
@@ -148,13 +155,6 @@ const HomePage: React.FC = () => {
         title="QA Pairs"
         value={patientData ? patientData.qa_data?.length ?? 0 : dbSummary?.total_qa_pairs ?? 0}
         color="purple"
-        isLoading={!dbSummary && !dbSummaryError}
-      />
-      <StatCard
-        icon={FaCalendarAlt}
-        title="Events"
-        value={patientData ? patientData.events?.length ?? 0 : dbSummary?.total_events ?? 0}
-        color="orange"
         isLoading={!dbSummary && !dbSummaryError}
       />
     </SimpleGrid>
@@ -212,20 +212,20 @@ const HomePage: React.FC = () => {
                   <Heading as="h2" size="lg" color={secondaryColor} mb={6}>Patient Data</Heading>
                   <Tabs variant="soft-rounded" colorScheme="teal">
                     <TabList mb={4} flexWrap="wrap">
+                      <Tab _selected={{ color: 'white', bg: 'teal.500' }}>Events</Tab>
                       <Tab _selected={{ color: 'white', bg: 'teal.500' }}>Clinical Notes</Tab>
                       <Tab _selected={{ color: 'white', bg: 'teal.500' }}>QA Pairs</Tab>
-                      <Tab _selected={{ color: 'white', bg: 'teal.500' }}>Events</Tab>
                     </TabList>
 
                     <TabPanels>
+                      <TabPanel px={0}>
+                        <EventsTable events={patientData.events} />
+                      </TabPanel>
                       <TabPanel px={0}>
                         <ClinicalNotesTable notes={patientData.notes} handleNoteClick={handleNoteClick} />
                       </TabPanel>
                       <TabPanel px={0}>
                         <QAPairsTable qaPairs={patientData.qa_data} />
-                      </TabPanel>
-                      <TabPanel px={0}>
-                        <EventsTable events={patientData.events} />
                       </TabPanel>
                     </TabPanels>
                   </Tabs>
