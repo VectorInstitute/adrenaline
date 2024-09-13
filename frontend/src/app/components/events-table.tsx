@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Table, Thead, Tbody, Tr, Th, Td, Text, Tag, Badge, Tooltip, Box, useColorModeValue, Flex, VStack } from '@chakra-ui/react';
 import { Event } from '../types/patient';
 
@@ -13,21 +13,21 @@ const EventsTable: React.FC<EventsTableProps> = ({ events }) => {
   const hoverBgColor = useColorModeValue('gray.50', 'gray.700');
 
   const getEventColor = (eventType: string): string => {
-    switch (eventType) {
-      case 'LAB': return 'blue';
-      case 'MEDICATION': return 'purple';
-      case 'DIAGNOSIS': return 'red';
-      case 'TRANSFER': return 'green';
-      case 'PROCEDURE': return 'orange';
-      case 'TRANSFER_TO': return 'teal';
-      case 'TRANSFER_FROM': return 'teal';
-      case 'HOSPITAL_ADMISSION': return 'pink';
-      case 'HOSPITAL_DISCHARGE': return 'pink';
-      default: return 'gray';
-    }
+    const colorMap: Record<string, string> = {
+      LAB: 'blue',
+      MEDICATION: 'purple',
+      DIAGNOSIS: 'red',
+      TRANSFER: 'green',
+      PROCEDURE: 'orange',
+      TRANSFER_TO: 'teal',
+      TRANSFER_FROM: 'teal',
+      HOSPITAL_ADMISSION: 'pink',
+      HOSPITAL_DISCHARGE: 'pink',
+    };
+    return colorMap[eventType] || 'gray';
   };
 
-  const formatEventDetails = (code: string): JSX.Element => {
+  const formatEventDetails = useMemo(() => (code: string): JSX.Element => {
     const [eventType, ...details] = code.split('//');
     const color = getEventColor(eventType);
 
@@ -43,14 +43,14 @@ const EventsTable: React.FC<EventsTableProps> = ({ events }) => {
         </Flex>
       </VStack>
     );
-  };
+  }, []);
 
-  const renderValue = (event: Event): JSX.Element => {
+  const renderValue = useMemo(() => (event: Event): JSX.Element => {
     const color = getEventColor(event.code.split('//')[0]);
     let value: number | string | null = null;
     let valueType: 'Numeric' | 'Text' | 'N/A' = 'N/A';
 
-    if (event.numeric_value !== undefined) {
+    if (typeof event.numeric_value === 'number') {
       value = event.numeric_value;
       valueType = 'Numeric';
     } else if (event.text_value) {
@@ -71,7 +71,9 @@ const EventsTable: React.FC<EventsTableProps> = ({ events }) => {
         </Badge>
       </Tooltip>
     );
-  };
+  }, []);
+
+  const memoizedEvents = useMemo(() => events, [events]);
 
   return (
     <Box overflowX="auto" borderWidth={1} borderRadius="lg" boxShadow="lg" bg={bgColor}>
@@ -84,7 +86,7 @@ const EventsTable: React.FC<EventsTableProps> = ({ events }) => {
           </Tr>
         </Thead>
         <Tbody>
-          {events.map((event, index) => (
+          {memoizedEvents.map((event, index) => (
             <Tr key={index} _hover={{ bg: hoverBgColor }} transition="background-color 0.2s">
               <Td borderColor={borderColor} py={4}>
                 <Text fontSize="sm" color={textColor} fontWeight="medium">
@@ -107,4 +109,4 @@ const EventsTable: React.FC<EventsTableProps> = ({ events }) => {
   );
 };
 
-export default EventsTable;
+export default React.memo(EventsTable);

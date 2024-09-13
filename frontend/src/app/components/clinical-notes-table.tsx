@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Box, Table, Thead, Tbody, Tr, Th, Td, Text, Tag, Badge, Tooltip, IconButton, Divider, useColorModeValue } from '@chakra-ui/react';
 import { FaEye } from 'react-icons/fa';
 import { ClinicalNote } from '../types/patient';
@@ -14,6 +14,8 @@ const ClinicalNotesTable: React.FC<ClinicalNotesTableProps> = ({ notes, handleNo
   const tableHoverBg = useColorModeValue('gray.100', 'gray.700');
   const tableHeaderBg = useColorModeValue('gray.100', 'gray.700');
 
+  const memoizedNotes = useMemo(() => notes, [notes]);
+
   return (
     <Box overflowX="auto">
       <Table variant="simple" size="sm">
@@ -28,9 +30,14 @@ const ClinicalNotesTable: React.FC<ClinicalNotesTableProps> = ({ notes, handleNo
           </Tr>
         </Thead>
         <Tbody>
-          {notes.map((note, index) => (
+          {memoizedNotes.map((note, index) => (
             <React.Fragment key={note.note_id}>
-              <Tr _hover={{ bg: tableHoverBg }} transition="background-color 0.2s" cursor="pointer" onClick={() => handleNoteClick(note.note_id)}>
+              <Tr
+                _hover={{ bg: tableHoverBg }}
+                transition="background-color 0.2s"
+                cursor="pointer"
+                onClick={() => handleNoteClick(note.note_id)}
+              >
                 <Td borderColor={tableBorderColor}>
                   <Tag colorScheme="blue" variant="solid">{note.note_id}</Tag>
                 </Td>
@@ -59,14 +66,14 @@ const ClinicalNotesTable: React.FC<ClinicalNotesTableProps> = ({ notes, handleNo
                     size="sm"
                     colorScheme="blue"
                     variant="ghost"
-                    onClick={(e) => {
+                    onClick={(e: React.MouseEvent) => {
                       e.stopPropagation();
                       handleNoteClick(note.note_id);
                     }}
                   />
                 </Td>
               </Tr>
-              {index < notes.length - 1 && (
+              {index < memoizedNotes.length - 1 && (
                 <Tr>
                   <Td colSpan={6} p={0}>
                     <Divider borderColor={tableBorderColor} />
@@ -81,4 +88,4 @@ const ClinicalNotesTable: React.FC<ClinicalNotesTableProps> = ({ notes, handleNo
   );
 };
 
-export default ClinicalNotesTable;
+export default React.memo(ClinicalNotesTable);

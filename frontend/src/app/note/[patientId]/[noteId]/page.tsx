@@ -14,10 +14,13 @@ import EntityVisualization from '../../../components/entity-viz'
 import { CopyIcon } from '@chakra-ui/icons'
 import { ClinicalNote, NERResponse } from '../../../types/patient'
 
-const fetcher = async (url: string) => {
+const fetcher = async (url: string): Promise<ClinicalNote> => {
+  const token = localStorage.getItem('token')
+  if (!token) throw new Error('No token found')
+
   const res = await fetch(url, {
     headers: {
-      'Authorization': `Bearer ${localStorage.getItem('token')}`,
+      'Authorization': `Bearer ${token}`,
     },
   })
   if (!res.ok) {
@@ -28,7 +31,7 @@ const fetcher = async (url: string) => {
 
 function NotePage() {
   const params = useParams()
-  const { patientId, noteId } = params
+  const { patientId, noteId } = params as { patientId: string; noteId: string }
   const { data: note, error, isLoading } = useSWR<ClinicalNote>(
     patientId && noteId ? `/api/patient/${patientId}/note/${noteId}` : null,
     fetcher
@@ -50,10 +53,13 @@ function NotePage() {
     setNerResponse(null)
 
     try {
+      const token = localStorage.getItem('token')
+      if (!token) throw new Error('No token found')
+
       const response = await fetch(`/api/extract_entities/${patientId}/${noteId}`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
       })
@@ -64,7 +70,6 @@ function NotePage() {
       }
 
       const data: NERResponse = await response.json()
-      console.log('NER Response:', data)
 
       if (!data.entities || !Array.isArray(data.entities)) {
         throw new Error('Invalid response format: entities is missing or not an array')
@@ -103,9 +108,12 @@ function NotePage() {
     setIsCopying(true)
 
     try {
+      const token = localStorage.getItem('token')
+      if (!token) throw new Error('No token found')
+
       const response = await fetch(`/api/patient/${patientId}/note/${noteId}/raw`, {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Authorization': `Bearer ${token}`,
         },
       })
 

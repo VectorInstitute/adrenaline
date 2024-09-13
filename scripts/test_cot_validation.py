@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 # Constants
 BACKEND_BASE_URL = "http://localhost:8002"
-LLM_BASE_URL = "http://gpu031:8080/v1"
+LLM_BASE_URL = "http://gpu004:8080/v1"
 USERNAME = "admin"
 PASSWORD = "admin_password"
 MONGO_URI = "mongodb://root:password@cyclops.cluster.local:27017"
@@ -242,6 +242,7 @@ def validate_qa_pair(context: str, question: str, answer: str) -> Dict[str, Any]
         """
 
         validation_result = send_chat_prompt(validation_prompt)
+        print(validation_result)
         logger.debug(f"Raw LLM Response: {validation_result[:100]}...")
 
         parsed_result = extract_json_from_response(validation_result)

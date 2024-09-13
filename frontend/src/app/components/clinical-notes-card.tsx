@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Card, CardBody, VStack, Icon, Heading, Text, Badge, Wrap, WrapItem, Center, Skeleton, useColorModeValue } from '@chakra-ui/react';
 import { FaFileAlt } from 'react-icons/fa';
-import { PatientData } from '../types/patient';
+import { PatientData, ClinicalNote } from '../types/patient';
 
 interface ClinicalNotesCardProps {
   patientData: PatientData | null;
@@ -13,17 +13,20 @@ const ClinicalNotesCard: React.FC<ClinicalNotesCardProps> = ({ patientData, dbTo
   const cardBgColor = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.700');
 
+  const noteCounts = useMemo(() => {
+    if (!patientData) return null;
+    return patientData.notes.reduce((acc: Record<string, number>, note: ClinicalNote) => {
+      acc[note.note_type] = (acc[note.note_type] || 0) + 1;
+      return acc;
+    }, {});
+  }, [patientData]);
+
   const renderContent = () => {
     if (isLoading) {
       return <Skeleton height="24px" width="60px" />;
     }
 
-    if (patientData) {
-      const noteCounts = patientData.notes.reduce((acc, note) => {
-        acc[note.note_type] = (acc[note.note_type] || 0) + 1;
-        return acc;
-      }, {} as Record<string, number>);
-
+    if (patientData && noteCounts) {
       return (
         <VStack align="center" spacing={2} width="100%">
           <Text fontSize="2xl" fontWeight="bold" color="blue.500">
@@ -64,4 +67,4 @@ const ClinicalNotesCard: React.FC<ClinicalNotesCardProps> = ({ patientData, dbTo
   );
 };
 
-export default ClinicalNotesCard;
+export default React.memo(ClinicalNotesCard);

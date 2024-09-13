@@ -7,6 +7,11 @@ interface MetaAnnotation {
   name: string;
 }
 
+interface ICD10 {
+  chapter: string;
+  name: string;
+}
+
 interface Entity {
   pretty_name: string;
   cui: string;
@@ -18,7 +23,7 @@ interface Entity {
   context_similarity: number;
   start: number;
   end: number;
-  icd10: Array<{ chapter: string; name: string }>;
+  icd10: ICD10[];
   ontologies: string[];
   snomed: string[];
   id: number;
@@ -35,10 +40,10 @@ const EntityVisualization: React.FC<EntityVisualizationProps> = ({ text, entitie
   const bgColor = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.600');
 
-  const getEntityColor = useCallback((entityTypes: string[]) => {
+  const getEntityColor = useCallback((entityTypes: string[]): string => {
     const baseColors = [
       'red', 'blue', 'green', 'yellow', 'purple', 'orange', 'pink', 'teal', 'cyan', 'gray'
-    ];
+    ] as const;
 
     const hash = entityTypes.join('').split('').reduce((acc, char) => char.charCodeAt(0) + acc, 0);
     const colorIndex = hash % baseColors.length;
@@ -49,7 +54,7 @@ const EntityVisualization: React.FC<EntityVisualizationProps> = ({ text, entitie
 
   const renderText = useCallback(() => {
     let lastIndex = 0;
-    const elements = [];
+    const elements: JSX.Element[] = [];
 
     sortedEntities.forEach((entity, index) => {
       if (entity.start > lastIndex) {

@@ -1,10 +1,11 @@
 'use client'
 
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useMemo } from 'react'
 import {
   Box, Text, Flex, Heading, VStack, useColorModeValue, Button, Input,
   Container, Card, CardBody, SimpleGrid, Icon, useToast, InputGroup,
-  InputLeftElement, Tabs, TabList, TabPanels, Tab, TabPanel, useBreakpointValue
+  InputLeftElement, Tabs, TabList, TabPanels, Tab, TabPanel, useBreakpointValue,
+  Divider, Stack
 } from '@chakra-ui/react'
 import { useRouter } from 'next/navigation'
 import { FaFileAlt, FaUser, FaSearch, FaQuestionCircle, FaCalendarAlt } from 'react-icons/fa'
@@ -22,14 +23,21 @@ interface DatabaseSummary {
   total_patients: number;
   total_notes: number;
   total_qa_pairs: number;
-  total_events: 'N/A';  // Changed to 'N/A'
+  total_events: 'N/A';
 }
 
-const fetcher = (url: string) => fetch(url, {
-  headers: {
-    'Authorization': `Bearer ${localStorage.getItem('token')}`,
-  },
-}).then(res => res.json())
+const fetcher = async (url: string): Promise<DatabaseSummary> => {
+  const token = localStorage.getItem('token')
+  if (!token) throw new Error('No token found')
+
+  const res = await fetch(url, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+  })
+  if (!res.ok) throw new Error('Failed to fetch data')
+  return res.json()
+}
 
 const HomePage: React.FC = () => {
   const [patientId, setPatientId] = useState<string>('')
@@ -45,14 +53,15 @@ const HomePage: React.FC = () => {
   const router = useRouter()
   const toast = useToast()
 
-  const primaryColor = useColorModeValue('teal.500', 'teal.300')
-  const secondaryColor = useColorModeValue('blue.500', 'blue.300')
+  const primaryColor = useColorModeValue('teal.600', 'teal.300')
+  const secondaryColor = useColorModeValue('blue.600', 'blue.300')
   const bgColor = useColorModeValue('gray.50', 'gray.900')
   const cardBgColor = useColorModeValue('white', 'gray.800')
   const textColor = useColorModeValue('gray.800', 'gray.100')
   const borderColor = useColorModeValue('gray.200', 'gray.700')
+  const headingColor = useColorModeValue('gray.700', 'gray.200')
 
-  const containerMaxWidth = useBreakpointValue({ base: 'container.sm', md: 'container.md', lg: 'container.xl' })
+  const containerMaxWidth = useBreakpointValue({ base: '100%', sm: 'container.sm', md: 'container.md', lg: 'container.xl' })
 
   const loadPatientData = useCallback(async () => {
     if (!patientId.trim()) {
@@ -66,7 +75,8 @@ const HomePage: React.FC = () => {
       return
     }
 
-    if (isNaN(Number(patientId))) {
+    const patientIdNumber = Number(patientId)
+    if (isNaN(patientIdNumber)) {
       toast({
         title: "Error",
         description: "Patient ID must be a number",
@@ -79,9 +89,12 @@ const HomePage: React.FC = () => {
 
     setIsLoading(true)
     try {
-      const response = await fetch(`/api/patient_data/${patientId}`, {
+      const token = localStorage.getItem('token')
+      if (!token) throw new Error('No token found')
+
+      const response = await fetch(`/api/patient_data/${patientIdNumber}`, {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Authorization': `Bearer ${token}`,
         },
       })
 
@@ -129,8 +142,12 @@ const HomePage: React.FC = () => {
     router.push(`/note/${patientId}/${noteId}`)
   }, [patientId, router])
 
-  const renderSummary = () => (
-    <SimpleGrid columns={{ base: 1, md: 2, lg: 4 }} spacing={6}>
+  const handlePatientIdChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setPatientId(e.target.value)
+  }, [])
+
+  const renderSummary = useMemo(() => (
+    <SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} spacing={{ base: 4, md: 6 }}>
       <StatCard
         icon={FaUser}
         title="Total Patients"
@@ -158,38 +175,42 @@ const HomePage: React.FC = () => {
         isLoading={!dbSummary && !dbSummaryError}
       />
     </SimpleGrid>
-  )
+  ), [patientData, dbSummary, dbSummaryError])
 
   return (
     <Flex minHeight="100vh" bg={bgColor}>
       <Sidebar />
-      <Box flex={1} ml={{ base: 0, md: 60 }} transition="margin-left 0.3s" p={6}>
+      <Box flex={1} ml={{ base: 0, md: 60 }} transition="margin-left 0.3s" p={{ base: 4, md: 6 }}>
         <Container maxW={containerMaxWidth}>
-          <VStack spacing={8} align="stretch">
-            <Card bg={cardBgColor} p={6} borderRadius="xl" shadow="lg" borderWidth={1} borderColor={borderColor}>
+          <VStack spacing={{ base: 6, md: 8 }} align="stretch">
+            <Card bg={cardBgColor} p={{ base: 4, md: 6 }} borderRadius="xl" shadow="lg" borderWidth={1} borderColor={borderColor}>
               <CardBody>
-                <Heading as="h1" size="xl" color={primaryColor} mb={4}>Clinical Data Dashboard</Heading>
-                <Text fontSize="lg" color={textColor}>View and analyze patient clinical data.</Text>
+                <Heading as="h1" size={{ base: "xl", md: "2xl" }} color={primaryColor} mb={4} fontWeight="bold">Clinical Data Dashboard</Heading>
+                <Divider mb={4} />
+                <Text fontSize={{ base: "md", md: "lg" }} color={textColor} fontWeight="medium">View and analyze patient clinical data.</Text>
               </CardBody>
             </Card>
 
-            {renderSummary()}
+            {renderSummary}
 
-            <Card bg={cardBgColor} p={6} borderRadius="xl" shadow="lg" borderWidth={1} borderColor={borderColor}>
+            <Card bg={cardBgColor} p={{ base: 4, md: 6 }} borderRadius="xl" shadow="lg" borderWidth={1} borderColor={borderColor}>
               <CardBody>
-                <Heading as="h2" size="lg" color={secondaryColor} mb={6}>Load Patient Data</Heading>
-                <Flex direction={{ base: 'column', md: 'row' }} mb={4} align="center" gap={4}>
+                <Heading as="h2" size={{ base: "lg", md: "xl" }} color={secondaryColor} mb={{ base: 4, md: 6 }} fontWeight="semibold">Load Patient Data</Heading>
+                <Divider mb={{ base: 4, md: 6 }} />
+                <Stack direction={{ base: 'column', md: 'row' }} spacing={4} align="center">
                   <InputGroup flex={1}>
                     <InputLeftElement pointerEvents="none">
-                      <Icon as={FaSearch} color="gray.300" />
+                      <Icon as={FaSearch} color="gray.400" />
                     </InputLeftElement>
                     <Input
                       value={patientId}
-                      onChange={(e) => setPatientId(e.target.value)}
+                      onChange={handlePatientIdChange}
                       placeholder="Enter Patient ID..."
                       bg={cardBgColor}
                       borderColor={borderColor}
                       _hover={{ borderColor: primaryColor }}
+                      fontSize={{ base: "md", md: "lg" }}
+                      height={{ base: "40px", md: "50px" }}
                     />
                   </InputGroup>
                   <Button
@@ -197,24 +218,28 @@ const HomePage: React.FC = () => {
                     onClick={loadPatientData}
                     isLoading={isLoading}
                     loadingText="Loading..."
-                    size="lg"
+                    size={{ base: "md", md: "lg" }}
                     width={{ base: 'full', md: 'auto' }}
+                    height={{ base: "40px", md: "50px" }}
+                    fontSize={{ base: "md", md: "lg" }}
+                    fontWeight="semibold"
                   >
                     Load Patient Data
                   </Button>
-                </Flex>
+                </Stack>
               </CardBody>
             </Card>
 
             {patientData && (
-              <Card bg={cardBgColor} p={6} borderRadius="xl" shadow="lg" borderWidth={1} borderColor={borderColor}>
+              <Card bg={cardBgColor} p={{ base: 4, md: 6 }} borderRadius="xl" shadow="lg" borderWidth={1} borderColor={borderColor}>
                 <CardBody>
-                  <Heading as="h2" size="lg" color={secondaryColor} mb={6}>Patient Data</Heading>
-                  <Tabs variant="soft-rounded" colorScheme="teal">
-                    <TabList mb={4} flexWrap="wrap">
-                      <Tab _selected={{ color: 'white', bg: 'teal.500' }}>Events</Tab>
-                      <Tab _selected={{ color: 'white', bg: 'teal.500' }}>Clinical Notes</Tab>
-                      <Tab _selected={{ color: 'white', bg: 'teal.500' }}>QA Pairs</Tab>
+                  <Heading as="h2" size={{ base: "lg", md: "xl" }} color={secondaryColor} mb={{ base: 4, md: 6 }} fontWeight="semibold">Patient Data</Heading>
+                  <Divider mb={{ base: 4, md: 6 }} />
+                  <Tabs variant="soft-rounded" colorScheme="teal" size={{ base: "md", md: "lg" }}>
+                    <TabList mb={{ base: 4, md: 6 }} flexWrap="wrap" gap={4}>
+                      <Tab _selected={{ color: 'white', bg: 'teal.500' }} fontWeight="medium">Events</Tab>
+                      <Tab _selected={{ color: 'white', bg: 'teal.500' }} fontWeight="medium">Clinical Notes</Tab>
+                      <Tab _selected={{ color: 'white', bg: 'teal.500' }} fontWeight="medium">QA Pairs</Tab>
                     </TabList>
 
                     <TabPanels>

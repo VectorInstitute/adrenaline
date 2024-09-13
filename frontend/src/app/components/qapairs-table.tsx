@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Box, Table, Thead, Tbody, Tr, Th, Td, Text, Divider, useColorModeValue } from '@chakra-ui/react';
 import { QAPair } from '../types/patient';
 
@@ -12,6 +12,8 @@ const QAPairsTable: React.FC<QAPairsTableProps> = ({ qaPairs }) => {
   const tableHoverBg = useColorModeValue('gray.100', 'gray.700');
   const tableHeaderBg = useColorModeValue('gray.100', 'gray.700');
 
+  const memoizedQAPairs = useMemo(() => qaPairs, [qaPairs]);
+
   return (
     <Box overflowX="auto">
       <Table variant="simple" size="sm">
@@ -22,8 +24,8 @@ const QAPairsTable: React.FC<QAPairsTableProps> = ({ qaPairs }) => {
           </Tr>
         </Thead>
         <Tbody>
-          {qaPairs.map((qaPair, index) => (
-            <React.Fragment key={index}>
+          {memoizedQAPairs.map((qaPair, index) => (
+            <React.Fragment key={`qa-pair-${index}`}>
               <Tr _hover={{ bg: tableHoverBg }} transition="background-color 0.2s">
                 <Td borderColor={tableBorderColor}>
                   <Text fontSize="sm" color={textColor}>{qaPair.question}</Text>
@@ -32,7 +34,7 @@ const QAPairsTable: React.FC<QAPairsTableProps> = ({ qaPairs }) => {
                   <Text fontSize="sm" color={textColor}>{qaPair.answer}</Text>
                 </Td>
               </Tr>
-              {index < qaPairs.length - 1 && (
+              {index < memoizedQAPairs.length - 1 && (
                 <Tr>
                   <Td colSpan={2} p={0}>
                     <Divider borderColor={tableBorderColor} />
@@ -47,4 +49,4 @@ const QAPairsTable: React.FC<QAPairsTableProps> = ({ qaPairs }) => {
   );
 };
 
-export default QAPairsTable;
+export default React.memo(QAPairsTable);
