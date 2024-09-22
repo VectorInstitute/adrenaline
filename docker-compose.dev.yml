@@ -25,7 +25,7 @@ services:
 
   clinical-ner-service-dev:
     build:
-      context: ./backend/clinical_ner_service
+      context: ./backend/services/clinical_ner_service
       dockerfile: Dockerfile.dev
       args:
         - NER_SERVICE_PORT=${NER_SERVICE_PORT}
@@ -38,10 +38,35 @@ services:
       - MEDCAT_MODELS_DIR=${MEDCAT_MODELS_DIR}
       - SELECTED_MEDCAT_MODEL=${SELECTED_MEDCAT_MODEL:-umls_sm_pt2ch_533bab5115c6c2d6.zip}
     volumes:
-      - ./backend/clinical_ner_service:/app
+      - ./backend/services/clinical_ner_service:/app
       - ${MEDCAT_MODELS_DIR}:${MEDCAT_MODELS_DIR}:ro
     networks:
       - app-network
+
+  embedding-service-dev:
+    build:
+      context: ./backend/services/embedding_service
+      dockerfile: Dockerfile.dev
+      args:
+        - EMBEDDING_SERVICE_PORT=${EMBEDDING_SERVICE_PORT}
+    image: vectorinstitute/adrenaline:embedding-service-dev-${BUILD_ID}
+    env_file: .env.development
+    ports:
+      - "${EMBEDDING_SERVICE_PORT}:${EMBEDDING_SERVICE_PORT}"
+    volumes:
+      - ./backend/services/embedding_service:/app
+    networks:
+      - app-network
+    environment:
+      - CUDA_VISIBLE_DEVICES=0
+      - EMBEDDING_SERVICE_PORT=${EMBEDDING_SERVICE_PORT}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
 
   backend-dev:
     build:
