@@ -1,13 +1,13 @@
 services:
   frontend-dev:
     build:
-      context: ./frontend
+      context: ./ui
       dockerfile: Dockerfile.dev
       args:
         - FRONTEND_PORT=${FRONTEND_PORT}
         - BACKEND_PORT=${BACKEND_PORT}
         - BACKEND_HOST=${BACKEND_HOST}
-    image: vectorinstitute/adrenaline:frontend-dev-${BUILD_ID}
+    image: vectorinstitute/adrenaline:ui-dev-${BUILD_ID}
     env_file: .env.development
     ports:
       - "${FRONTEND_PORT}:${FRONTEND_PORT}"
@@ -16,7 +16,7 @@ services:
       - NEXT_PUBLIC_BACKEND_PORT=${BACKEND_PORT}
       - NEXT_PUBLIC_FRONTEND_PORT=${FRONTEND_PORT}
     volumes:
-      - ./frontend:/app
+      - ./ui:/app
       - /app/node_modules
     depends_on:
       - backend-dev
@@ -25,7 +25,7 @@ services:
 
   clinical-ner-service-dev:
     build:
-      context: ./backend/services/clinical_ner_service
+      context: ./services/clinical_ner
       dockerfile: Dockerfile.dev
       args:
         - NER_SERVICE_PORT=${NER_SERVICE_PORT}
@@ -38,14 +38,14 @@ services:
       - MEDCAT_MODELS_DIR=${MEDCAT_MODELS_DIR}
       - SELECTED_MEDCAT_MODEL=${SELECTED_MEDCAT_MODEL:-umls_sm_pt2ch_533bab5115c6c2d6.zip}
     volumes:
-      - ./backend/services/clinical_ner_service:/app
+      - ./services/clinical_ner:/app
       - ${MEDCAT_MODELS_DIR}:${MEDCAT_MODELS_DIR}:ro
     networks:
       - app-network
 
   embedding-service-dev:
     build:
-      context: ./backend/services/embedding_service
+      context: ./services/embedding
       dockerfile: Dockerfile.dev
       args:
         - EMBEDDING_SERVICE_PORT=${EMBEDDING_SERVICE_PORT}
@@ -54,7 +54,7 @@ services:
     ports:
       - "${EMBEDDING_SERVICE_PORT}:${EMBEDDING_SERVICE_PORT}"
     volumes:
-      - ./backend/services/embedding_service:/app
+      - ./services/embedding:/app
     networks:
       - app-network
     environment:
@@ -72,7 +72,7 @@ services:
 
   backend-dev:
     build:
-      context: ./backend
+      context: ./adrenaline
       dockerfile: Dockerfile.dev
       args:
         - BACKEND_PORT=${BACKEND_PORT}
@@ -99,7 +99,7 @@ services:
       - EMBEDDING_SERVICE_HOST=${EMBEDDING_SERVICE_HOST}
       - EMBEDDING_SERVICE_PORT=${EMBEDDING_SERVICE_PORT}
     volumes:
-      - ./backend:/app
+      - ./adrenaline:/app
       - ${MEDS_DATA_DIR}:${MEDS_DATA_DIR}:ro
     networks:
       - app-network
