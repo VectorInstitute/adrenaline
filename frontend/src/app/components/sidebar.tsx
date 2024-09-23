@@ -16,7 +16,7 @@ import {
   Tooltip,
   Avatar,
 } from '@chakra-ui/react'
-import { FiHome, FiSettings, FiLogOut, FiMenu, FiChevronLeft, FiChevronRight } from 'react-icons/fi'
+import { FiHome, FiLogOut, FiMenu, FiChevronLeft, FiChevronRight } from 'react-icons/fi'
 import { RiUserLine } from 'react-icons/ri'
 import NextLink from 'next/link'
 import { useAuth } from '../context/auth'
@@ -31,7 +31,7 @@ const Sidebar = () => {
   return (
     <Box>
       <SidebarContent
-        onClose={() => onClose}
+        onClose={onClose}
         display={{ base: 'none', md: 'block' }}
         isCollapsed={isCollapsed}
         toggleSidebar={toggleSidebar}
@@ -207,7 +207,7 @@ const NavItems: React.FC<NavItemsProps> = ({ textColor, isCollapsed }) => {
   return (
     <>
       <NavItem icon={FiHome} href="/home" textColor={textColor} isCollapsed={isCollapsed}>
-        Dashboard
+        Home
       </NavItem>
       <NavItem
         icon={FiLogOut}

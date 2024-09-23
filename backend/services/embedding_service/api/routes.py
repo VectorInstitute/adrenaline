@@ -1,5 +1,6 @@
-"""Embedding Server for NV-Embed-v2 Model."""
+"""Embedding Service API routes."""
 
+import logging
 import os
 from typing import Dict, List, Tuple
 
@@ -11,54 +12,45 @@ from transformers import AutoConfig, AutoModel, AutoTokenizer
 from api.embeddings.data import EmbeddingRequest, EmbeddingResponse
 
 
-# Set environment variables for GPU usage
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # Use only one GPU
-os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:512"
+# Increase batch size
+BATCH_SIZE = int(os.getenv("BATCH_SIZE", "8"))
 
-# Set batch size (can be overridden by environment variable)
-BATCH_SIZE = 32
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 router = APIRouter()
 
 
 def load_model() -> Tuple[AutoModel, AutoTokenizer]:
-    """
-    Load the NV-Embed-v2 model and tokenizer with optimizations for memory and speed.
+    """Load the model.
 
     Returns
     -------
-    model: AutoModel
-        The NV-Embed-v2 model.
-    tokenizer: AutoTokenizer
-        The tokenizer for the NV-Embed-v2 model.
+    Tuple[AutoModel, AutoTokenizer]
+        The model and tokenizer.
+
     """
-    print("Loading model...")
+    logger.info("Loading model...")
     model_id = "nvidia/NV-Embed-v2"
-
-    # Download the model files
     cache_dir = snapshot_download(model_id)
-
     config = AutoConfig.from_pretrained(cache_dir, trust_remote_code=True)
 
-    # Add the missing attribute if it doesn't exist
     if not hasattr(config.latent_attention_config, "_attn_implementation_internal"):
         config.latent_attention_config._attn_implementation_internal = None
 
-    # Load the model directly to GPU
+    # Load model across both GPUs
     model = AutoModel.from_pretrained(
         cache_dir,
         config=config,
         trust_remote_code=True,
         torch_dtype=torch.float16,
-        device_map="auto",
+        device_map="balanced",  # Automatically balance across available GPUs
     )
 
-    print("Model loaded successfully")
-    print(f"Model device: {next(model.parameters()).device}")
+    logger.info("Model loaded successfully")
+    logger.info(f"Model devices: {model.hf_device_map}")
 
-    # Load tokenizer
     tokenizer = AutoTokenizer.from_pretrained(cache_dir)
-
     return model, tokenizer
 
 
@@ -67,7 +59,7 @@ model, tokenizer = load_model()
 
 @torch.no_grad()
 def process_batch(texts: List[str], instruction: str) -> List[List[float]]:
-    """Process a batch of texts and return their embeddings.
+    """Process a batch of texts.
 
     Parameters
     ----------
@@ -78,8 +70,9 @@ def process_batch(texts: List[str], instruction: str) -> List[List[float]]:
 
     Returns
     -------
-    embeddings: List[List[float]]
+    List[List[float]]
         The embeddings of the texts.
+
     """
     inputs = tokenizer(
         [f"{instruction}\n{text}" for text in texts],
@@ -89,12 +82,10 @@ def process_batch(texts: List[str], instruction: str) -> List[List[float]]:
         max_length=8192,
     )
 
-    # Move inputs to the same device as the model
-    device = next(model.parameters()).device
-    inputs = {k: v.to(device) for k, v in inputs.items()}
+    # Move inputs to the first GPU (model will handle distribution)
+    inputs = {k: v.to("cuda:0") for k, v in inputs.items()}
 
     outputs = model(**inputs)
-    # Use float32 for mean calculation to maintain precision
     return (
         outputs.get("sentence_embeddings")
         .to(torch.float32)
@@ -107,17 +98,18 @@ def process_batch(texts: List[str], instruction: str) -> List[List[float]]:
 
 @router.post("/embeddings", response_model=EmbeddingResponse)
 async def create_embeddings(request: EmbeddingRequest) -> Dict[str, List[List[float]]]:
-    """Create embeddings for the given texts.
+    """Create embeddings for a list of texts.
 
     Parameters
     ----------
     request: EmbeddingRequest
-        The request containing the texts to embed.
+        The request containing the texts and instruction.
 
     Returns
     -------
-    embeddings: Dict[str, List[List[float]]]
+    Dict[str, List[List[float]]]
         The embeddings of the texts.
+
     """
     try:
         all_embeddings = []
