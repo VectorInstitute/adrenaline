@@ -7,13 +7,14 @@ from datetime import timedelta
 from typing import Any, Dict, List
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Request, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.patients.data import ClinicalNote, NERResponse, PatientData, QAPair
+from api.patients.data import ClinicalNote, NERResponse, PatientData, QAPair, Query
 from api.patients.db import get_database
 from api.patients.ehr import fetch_patient_events, init_lazy_df
+from api.patients.rag import EmbeddingManager, MilvusManager
 from api.users.auth import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
     authenticate_user,
@@ -48,9 +49,23 @@ LLM_SERVICE_URL = f"http://{LLM_SERVICE_HOST}:{LLM_SERVICE_PORT}/v1"
 MEDS_DATA_DIR = os.getenv(
     "MEDS_DATA_DIR", "/mnt/data/odyssey/meds/merge_to_MEDS_cohort/train"
 )
+MILVUS_HOST = os.getenv("MILVUS_HOST", "localhost")
+MILVUS_PORT = os.getenv("MILVUS_PORT", "19530")
+EMBEDDING_SERVICE_HOST = os.getenv("EMBEDDING_SERVICE_HOST", "localhost")
+EMBEDDING_SERVICE_PORT = os.getenv("EMBEDDING_SERVICE_PORT", "8004")
+EMBEDDING_SERVICE_URL = (
+    f"http://{EMBEDDING_SERVICE_HOST}:{EMBEDDING_SERVICE_PORT}/embeddings"
+)
+COLLECTION_NAME = "patient_notes"
+TOP_K = 5
 
 # Initialize the lazy DataFrame
 init_lazy_df(MEDS_DATA_DIR)
+
+
+EMBEDDING_MANAGER = EmbeddingManager(EMBEDDING_SERVICE_URL)
+MILVUS_MANAGER = MilvusManager(MILVUS_HOST, MILVUS_PORT)
+MILVUS_MANAGER.connect()
 
 
 @router.get("/database_summary", response_model=Dict[str, Any])
@@ -116,6 +131,73 @@ async def get_database_summary(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while retrieving database summary",
+        ) from e
+
+
+@router.post("/retrieve")
+async def retrieve_relevant_patients(
+    query: Query = Body(...),  # noqa: B008
+    db: AsyncIOMotorDatabase = Depends(get_database),  # noqa: B008
+    current_user: User = Depends(get_current_active_user),  # noqa: B008
+) -> List[PatientData]:
+    """
+    Retrieve relevant patients based on the query.
+
+    Parameters
+    ----------
+    query : Query
+        The query to retrieve relevant patients.
+    db : AsyncIOMotorDatabase
+        The database connection.
+    current_user : User
+        The current authenticated user.
+
+    Returns
+    -------
+    List[PatientData]
+        The list of relevant patients.
+    """
+    try:
+        await MILVUS_MANAGER.ensure_collection_loaded()
+        # Get query embedding
+        query_embedding = await EMBEDDING_MANAGER.get_embedding(query.query)
+
+        # Search Milvus for similar notes
+        search_results = await MILVUS_MANAGER.search(query_embedding, TOP_K)
+
+        # Retrieve patient data for the top results
+        patient_ids = list({result["patient_id"] for result in search_results})
+        patients = await db.patients.find({"patient_id": {"$in": patient_ids}}).to_list(
+            None
+        )
+
+        patient_dict = {patient["patient_id"]: patient for patient in patients}
+
+        patient_data_list = []
+        for result in search_results:
+            patient_id = result["patient_id"]
+            note_id = result["note_id"]
+
+            patient = patient_dict.get(patient_id)
+            if patient:
+                notes = [
+                    ClinicalNote(**note)
+                    for note in patient.get("notes", [])
+                    if note["note_id"] == note_id
+                ]
+                qa_pairs = [QAPair(**qa) for qa in patient.get("qa_pairs", [])]
+                events = fetch_patient_events(patient_id)
+
+                patient_data = PatientData(
+                    patient_id=patient_id, notes=notes, qa_data=qa_pairs, events=events
+                )
+                patient_data_list.append(patient_data)
+
+        return patient_data_list
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"An error occurred: {str(e)}"
         ) from e
 
 

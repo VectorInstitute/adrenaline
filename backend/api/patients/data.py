@@ -6,6 +6,19 @@ from typing import Dict, List, Optional
 from pydantic import BaseModel, Field
 
 
+class Query(BaseModel):
+    """
+    Represents a query.
+
+    Attributes
+    ----------
+    query : str
+        The query.
+    """
+
+    query: str
+
+
 class QAPair(BaseModel):
     """
     Represents a question-answer pair.

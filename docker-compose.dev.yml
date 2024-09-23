@@ -25,7 +25,7 @@ services:
 
   clinical-ner-service-dev:
     build:
-      context: ./backend/clinical_ner_service
+      context: ./backend/services/clinical_ner_service
       dockerfile: Dockerfile.dev
       args:
         - NER_SERVICE_PORT=${NER_SERVICE_PORT}
@@ -38,10 +38,37 @@ services:
       - MEDCAT_MODELS_DIR=${MEDCAT_MODELS_DIR}
       - SELECTED_MEDCAT_MODEL=${SELECTED_MEDCAT_MODEL:-umls_sm_pt2ch_533bab5115c6c2d6.zip}
     volumes:
-      - ./backend/clinical_ner_service:/app
+      - ./backend/services/clinical_ner_service:/app
       - ${MEDCAT_MODELS_DIR}:${MEDCAT_MODELS_DIR}:ro
     networks:
       - app-network
+
+  embedding-service-dev:
+    build:
+      context: ./backend/services/embedding_service
+      dockerfile: Dockerfile.dev
+      args:
+        - EMBEDDING_SERVICE_PORT=${EMBEDDING_SERVICE_PORT}
+    image: vectorinstitute/adrenaline:embedding-service-dev-${BUILD_ID}
+    env_file: .env.development
+    ports:
+      - "${EMBEDDING_SERVICE_PORT}:${EMBEDDING_SERVICE_PORT}"
+    volumes:
+      - ./backend/services/embedding_service:/app
+    networks:
+      - app-network
+    environment:
+      - CUDA_VISIBLE_DEVICES=0,1
+      - EMBEDDING_SERVICE_PORT=${EMBEDDING_SERVICE_PORT}
+      - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
+      - BATCH_SIZE=${BATCH_SIZE:-1}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 2
+              capabilities: [gpu]
 
   backend-dev:
     build:
@@ -67,13 +94,19 @@ services:
       - MEDS_DATA_DIR=${MEDS_DATA_DIR}
       - LLM_SERVICE_HOST=${LLM_SERVICE_HOST}
       - LLM_SERVICE_PORT=${LLM_SERVICE_PORT}
+      - MILVUS_HOST=milvus-standalone
+      - MILVUS_PORT=19530
+      - EMBEDDING_SERVICE_HOST=${EMBEDDING_SERVICE_HOST}
+      - EMBEDDING_SERVICE_PORT=${EMBEDDING_SERVICE_PORT}
     volumes:
       - ./backend:/app
       - ${MEDS_DATA_DIR}:${MEDS_DATA_DIR}:ro
     networks:
       - app-network
+      - milvus
     depends_on:
       - mongodb
+      - milvus-standalone
 
   mongodb:
     image: mongo:4.4.18
@@ -86,10 +119,88 @@ services:
       - MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASSWORD}
     networks:
       - app-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  etcd:
+    container_name: milvus-etcd
+    image: quay.io/coreos/etcd:v3.5.5
+    environment:
+      - ETCD_AUTO_COMPACTION_MODE=revision
+      - ETCD_AUTO_COMPACTION_RETENTION=1000
+      - ETCD_QUOTA_BACKEND_BYTES=4294967296
+      - ETCD_SNAPSHOT_COUNT=50000
+      - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379
+      - ETCD_ADVERTISE_CLIENT_URLS=http://etcd:2379
+    volumes:
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/etcd:/etcd
+    command: etcd --data-dir /etcd
+    networks:
+      - milvus
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+      start_period: 10s
+
+  minio:
+    container_name: milvus-minio
+    image: minio/minio:RELEASE.2023-03-20T20-16-18Z
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/minio:/minio_data
+    command: minio server /minio_data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - milvus
+
+  milvus-standalone:
+    container_name: milvus-standalone
+    image: milvusdb/milvus:v2.2.11
+    command: ["milvus", "run", "standalone"]
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+    volumes:
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/milvus:/var/lib/milvus
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+    depends_on:
+      etcd:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - milvus
+      - app-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+      start_period: 90s
+    restart: always
 
 volumes:
   mongodb_data:
+  milvus-etcd:
+  milvus-minio:
 
 networks:
   app-network:
+    driver: bridge
+  milvus:
+    name: milvus
     driver: bridge

@@ -1,0 +1,26 @@
+[tool.poetry]
+name = "adrenaline-embedding-service"
+version = "0.1.0"
+description = "An embedding service for clinical notes"
+authors = ["Vector Institute <ai_engineering@vectorinstitute.ai>"]
+repository = "https://github.com/VectorInstitute/adrenaline"
+license = "Apache-2.0"
+packages = [
+    { include = "api/" },
+]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = ">=3.9, <3.12"
+fastapi = "^0.112.1"
+uvicorn = "^0.30.6"
+torch = "^2.4.1"
+transformers = "^4.44.2"
+pydantic = "^2.9.2"
+accelerate = "^0.34.2"
+einops = "^0.8.0"
+datasets = "^3.0.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
