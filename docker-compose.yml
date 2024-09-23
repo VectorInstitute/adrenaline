@@ -1,13 +1,13 @@
 services:
   frontend:
     build:
-      context: ./frontend
+      context: ./ui
       dockerfile: Dockerfile
       args:
         - FRONTEND_PORT=${FRONTEND_PORT}
         - BACKEND_PORT=${BACKEND_PORT}
         - BACKEND_HOST=${BACKEND_HOST}
-    image: vectorinstitute/adrenaline:frontend-${BUILD_ID}
+    image: vectorinstitute/adrenaline:ui-${BUILD_ID}
     env_file: .env.production
     ports:
       - "${FRONTEND_PORT}:${FRONTEND_PORT}"
@@ -22,7 +22,7 @@ services:
 
   backend:
     build:
-      context: ./backend
+      context: ./adrenaline
       dockerfile: Dockerfile
       args:
         - BACKEND_PORT=${BACKEND_PORT}
