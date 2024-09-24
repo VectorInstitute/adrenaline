@@ -1,121 +1,117 @@
 """Embedding Service API routes."""
 
-import logging
 import os
-from typing import Dict, List, Tuple
+import logging
+from typing import Dict, List
 
 import torch
 from fastapi import APIRouter, HTTPException
-from huggingface_hub import snapshot_download
 from transformers import AutoConfig, AutoModel, AutoTokenizer
 
 from api.embeddings.data import EmbeddingRequest, EmbeddingResponse
 
+# Set batch size and max length
+BATCH_SIZE = int(os.getenv("BATCH_SIZE", "4"))
+MAX_LENGTH = 512
 
-# Increase batch size
-BATCH_SIZE = int(os.getenv("BATCH_SIZE", "8"))
+# Set CUDA allocation config
+os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 router = APIRouter()
 
+# Global variables for model and tokenizer
+model = None
+tokenizer = None
 
-def load_model() -> Tuple[AutoModel, AutoTokenizer]:
-    """Load the model.
+async def load_model():
+    """Load the GatorTron model and tokenizer."""
+    global model, tokenizer
 
-    Returns
-    -------
-    Tuple[AutoModel, AutoTokenizer]
-        The model and tokenizer.
+    logger.info("Loading GatorTron model...")
+    model_id = "UFNLP/gatortron-medium"
+    config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
 
-    """
-    logger.info("Loading model...")
-    model_id = "nvidia/NV-Embed-v2"
-    cache_dir = snapshot_download(model_id)
-    config = AutoConfig.from_pretrained(cache_dir, trust_remote_code=True)
-
-    if not hasattr(config.latent_attention_config, "_attn_implementation_internal"):
-        config.latent_attention_config._attn_implementation_internal = None
-
-    # Load model across both GPUs
+    # Load model
     model = AutoModel.from_pretrained(
-        cache_dir,
+        model_id,
         config=config,
         trust_remote_code=True,
         torch_dtype=torch.float16,
-        device_map="balanced",  # Automatically balance across available GPUs
     )
 
-    logger.info("Model loaded successfully")
-    logger.info(f"Model devices: {model.hf_device_map}")
+    # Check GPU availability
+    if torch.cuda.is_available():
+        logger.info(f"CUDA is available. Found {torch.cuda.device_count()} GPU(s).")
+        if torch.cuda.device_count() > 1:
+            logger.info("Using DataParallel for multi-GPU support.")
+            model = torch.nn.DataParallel(model)
+        device = torch.device("cuda")
+    else:
+        logger.warning("CUDA is not available. Using CPU for inference.")
+        device = torch.device("cpu")
 
-    tokenizer = AutoTokenizer.from_pretrained(cache_dir)
-    return model, tokenizer
+    model.to(device)
+    model.eval()
 
+    logger.info(f"Model loaded successfully on {device}")
 
-model, tokenizer = load_model()
-
+    tokenizer = AutoTokenizer.from_pretrained(model_id)
 
 @torch.no_grad()
-def process_batch(texts: List[str], instruction: str) -> List[List[float]]:
-    """Process a batch of texts.
+def process_batch(texts: List[str]) -> List[List[float]]:
+    """Process a batch of texts to generate embeddings."""
+    global model, tokenizer
 
-    Parameters
-    ----------
-    texts: List[str]
-        The texts to embed.
-    instruction: str
-        The instruction to embed the texts.
-
-    Returns
-    -------
-    List[List[float]]
-        The embeddings of the texts.
-
-    """
     inputs = tokenizer(
-        [f"{instruction}\n{text}" for text in texts],
+        texts,
         padding=True,
         truncation=True,
         return_tensors="pt",
-        max_length=8192,
+        max_length=MAX_LENGTH,
     )
 
-    # Move inputs to the first GPU (model will handle distribution)
-    inputs = {k: v.to("cuda:0") for k, v in inputs.items()}
+    # Move inputs to the same device as the model
+    device = next(model.parameters()).device
+    inputs = {k: v.to(device) for k, v in inputs.items()}
 
-    outputs = model(**inputs)
-    return (
-        outputs.get("sentence_embeddings")
-        .to(torch.float32)
-        .mean(dim=1)
-        .cpu()
-        .numpy()
-        .tolist()
-    )
+    try:
+        outputs = model(**inputs)
+    except RuntimeError as e:
+        if "out of memory" in str(e):
+            torch.cuda.empty_cache()
+            # Try again with half the batch size
+            half_batch = len(texts) // 2
+            return process_batch(texts[:half_batch]) + process_batch(texts[half_batch:])
+        else:
+            raise
 
+    # Use mean pooling for sentence embeddings
+    attention_mask = inputs["attention_mask"]
+    embeddings = mean_pooling(outputs.last_hidden_state, attention_mask)
+
+    return embeddings.cpu().numpy().tolist()
+
+def mean_pooling(token_embeddings: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
+    """Perform mean pooling on the token embeddings."""
+    input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
+    return torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
 
 @router.post("/embeddings", response_model=EmbeddingResponse)
 async def create_embeddings(request: EmbeddingRequest) -> Dict[str, List[List[float]]]:
-    """Create embeddings for a list of texts.
+    """Create embeddings for a list of texts."""
+    global model, tokenizer
 
-    Parameters
-    ----------
-    request: EmbeddingRequest
-        The request containing the texts and instruction.
+    if model is None or tokenizer is None:
+        raise HTTPException(status_code=503, detail="Model not initialized")
 
-    Returns
-    -------
-    Dict[str, List[List[float]]]
-        The embeddings of the texts.
-
-    """
     try:
         all_embeddings = []
         for i in range(0, len(request.texts), BATCH_SIZE):
             batch = request.texts[i : i + BATCH_SIZE]
-            batch_embeddings = process_batch(batch, request.instruction)
+            batch_embeddings = process_batch(batch)
             all_embeddings.extend(batch_embeddings)
 
             # Clear CUDA cache to free up memory
@@ -123,4 +119,5 @@ async def create_embeddings(request: EmbeddingRequest) -> Dict[str, List[List[fl
 
         return {"embeddings": all_embeddings}
     except Exception as e:
+        logger.error(f"Error in create_embeddings: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e)) from e
