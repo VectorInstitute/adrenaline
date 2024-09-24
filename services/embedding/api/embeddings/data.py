@@ -10,14 +10,11 @@ class EmbeddingRequest(BaseModel):
 
     Attributes
     ----------
-    texts: List[str]
+    texts : List[str]
         The texts to embed.
-    instruction: str
-        The instruction to embed the texts.
     """
 
     texts: List[str]
-    instruction: str = "Represent the text for retrieval:"
 
 
 class EmbeddingResponse(BaseModel):
@@ -25,7 +22,7 @@ class EmbeddingResponse(BaseModel):
 
     Attributes
     ----------
-    embeddings: List[List[float]]
+    embeddings : List[List[float]]
         The embeddings of the texts.
     """
 
