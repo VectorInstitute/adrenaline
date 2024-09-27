@@ -1,31 +1,7 @@
 services:
-  frontend-dev:
-    build:
-      context: ./ui
-      dockerfile: Dockerfile.dev
-      args:
-        - FRONTEND_PORT=${FRONTEND_PORT}
-        - BACKEND_PORT=${BACKEND_PORT}
-        - BACKEND_HOST=${BACKEND_HOST}
-    image: vectorinstitute/adrenaline:ui-dev-${BUILD_ID}
-    env_file: .env.development
-    ports:
-      - "${FRONTEND_PORT}:${FRONTEND_PORT}"
-    environment:
-      - NEXT_PUBLIC_BACKEND_HOST=${BACKEND_HOST}
-      - NEXT_PUBLIC_BACKEND_PORT=${BACKEND_PORT}
-      - NEXT_PUBLIC_FRONTEND_PORT=${FRONTEND_PORT}
-    volumes:
-      - ./ui:/app
-      - /app/node_modules
-    depends_on:
-      - backend-dev
-    networks:
-      - app-network
-
   clinical-ner-service-dev:
     build:
-      context: ./services/clinical_ner
+      context: ./clinical_ner
       dockerfile: Dockerfile.dev
       args:
         - NER_SERVICE_PORT=${NER_SERVICE_PORT}
@@ -38,14 +14,20 @@ services:
       - MEDCAT_MODELS_DIR=${MEDCAT_MODELS_DIR}
       - SELECTED_MEDCAT_MODEL=${SELECTED_MEDCAT_MODEL:-umls_sm_pt2ch_533bab5115c6c2d6.zip}
     volumes:
-      - ./services/clinical_ner:/app
+      - ./clinical_ner:/app
       - ${MEDCAT_MODELS_DIR}:${MEDCAT_MODELS_DIR}:ro
     networks:
-      - app-network
+      - services-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${NER_SERVICE_PORT}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   embedding-service-dev:
     build:
-      context: ./services/embedding
+      context: ./embedding
       dockerfile: Dockerfile.dev
       args:
         - EMBEDDING_SERVICE_PORT=${EMBEDDING_SERVICE_PORT}
@@ -54,9 +36,9 @@ services:
     ports:
       - "${EMBEDDING_SERVICE_PORT}:${EMBEDDING_SERVICE_PORT}"
     volumes:
-      - ./services/embedding:/app
+      - ./embedding:/app
     networks:
-      - app-network
+      - services-network
     environment:
       - CUDA_VISIBLE_DEVICES=0,1
       - EMBEDDING_SERVICE_PORT=${EMBEDDING_SERVICE_PORT}
@@ -69,58 +51,8 @@ services:
             - driver: nvidia
               count: 2
               capabilities: [gpu]
-
-  backend-dev:
-    build:
-      context: ./adrenaline
-      dockerfile: Dockerfile.dev
-      args:
-        - BACKEND_PORT=${BACKEND_PORT}
-        - FRONTEND_PORT=${FRONTEND_PORT}
-        - NER_SERVICE_PORT=${NER_SERVICE_PORT}
-    image: vectorinstitute/adrenaline:backend-dev-${BUILD_ID}
-    env_file: .env.development
-    ports:
-      - "${BACKEND_PORT}:${BACKEND_PORT}"
-    environment:
-      - BACKEND_PORT=${BACKEND_PORT}
-      - FRONTEND_PORT=${FRONTEND_PORT}
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
-      - NER_SERVICE_PORT=${NER_SERVICE_PORT}
-      - MONGO_USERNAME=${MONGO_USERNAME}
-      - MONGO_PASSWORD=${MONGO_PASSWORD}
-      - MONGO_HOST=mongodb
-      - MONGO_PORT=27017
-      - MEDS_DATA_DIR=${MEDS_DATA_DIR}
-      - LLM_SERVICE_HOST=${LLM_SERVICE_HOST}
-      - LLM_SERVICE_PORT=${LLM_SERVICE_PORT}
-      - MILVUS_HOST=milvus-standalone
-      - MILVUS_PORT=19530
-      - EMBEDDING_SERVICE_HOST=${EMBEDDING_SERVICE_HOST}
-      - EMBEDDING_SERVICE_PORT=${EMBEDDING_SERVICE_PORT}
-    volumes:
-      - ./adrenaline:/app
-      - ${MEDS_DATA_DIR}:${MEDS_DATA_DIR}:ro
-    networks:
-      - app-network
-      - milvus
-    depends_on:
-      - mongodb
-      - milvus-standalone
-
-  mongodb:
-    image: mongo:4.4.18
-    ports:
-      - "27017:27017"
-    volumes:
-      - mongodb_data:/data/db
-    environment:
-      - MONGO_INITDB_ROOT_USERNAME=${MONGO_USERNAME}
-      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASSWORD}
-    networks:
-      - app-network
     healthcheck:
-      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      test: ["CMD", "curl", "-f", "http://localhost:${EMBEDDING_SERVICE_PORT}/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -140,7 +72,7 @@ services:
       - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/etcd:/etcd
     command: etcd --data-dir /etcd
     networks:
-      - milvus
+      - services-network
     healthcheck:
       test: ["CMD", "etcdctl", "endpoint", "health"]
       interval: 30s
@@ -163,17 +95,20 @@ services:
       timeout: 20s
       retries: 3
     networks:
-      - milvus
+      - services-network
 
   milvus-standalone:
     container_name: milvus-standalone
-    image: milvusdb/milvus:v2.2.11
+    image: milvusdb/milvus:v2.4.11
     command: ["milvus", "run", "standalone"]
+    security_opt:
+      - seccomp:unconfined
     environment:
       ETCD_ENDPOINTS: etcd:2379
       MINIO_ADDRESS: minio:9000
+      DOCKER_VOLUME_DIRECTORY: ${DOCKER_VOLUME_DIR:-.}
     volumes:
-      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/milvus:/var/lib/milvus
+      - ${DOCKER_VOLUME_DIR}/volumes/milvus:/var/lib/milvus
     ports:
       - "19530:19530"
       - "9091:9091"
@@ -183,8 +118,7 @@ services:
       minio:
         condition: service_healthy
     networks:
-      - milvus
-      - app-network
+      - services-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
       interval: 30s
@@ -193,14 +127,30 @@ services:
       start_period: 90s
     restart: always
 
+  mongodb:
+    image: mongo:4.4.18
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_USERNAME}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASSWORD}
+    networks:
+      - services-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
 volumes:
-  mongodb_data:
   milvus-etcd:
   milvus-minio:
+  mongodb_data:
 
 networks:
-  app-network:
-    driver: bridge
-  milvus:
-    name: milvus
+  services-network:
+    name: services-network
     driver: bridge

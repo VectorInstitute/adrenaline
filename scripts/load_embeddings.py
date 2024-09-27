@@ -1,10 +1,18 @@
 import asyncio
 import logging
-from typing import List
+from typing import List, Dict
 from motor.motor_asyncio import AsyncIOMotorClient
-from pymilvus import connections, Collection, FieldSchema, CollectionSchema, DataType
+from pymilvus import (
+    connections,
+    Collection,
+    FieldSchema,
+    CollectionSchema,
+    DataType,
+    utility,
+)
 import httpx
 import time
+import re
 from tqdm.asyncio import tqdm
 from tenacity import (
     retry,
@@ -27,10 +35,14 @@ MILVUS_PORT = 19530
 EMBEDDING_SERVICE_URL = "http://localhost:8004/embeddings"
 BATCH_SIZE = 1
 MAX_PATIENTS = 100
-EMBEDDING_INSTRUCTION = "Represent the clinical note for retrieval:"
+EMBEDDING_INSTRUCTION = (
+    "Represent the clinical note for retrieval, to provide context for a search query."
+)
 MAX_RETRIES = 3
 RETRY_WAIT_MULTIPLIER = 1
 RETRY_WAIT_MAX = 10
+VECTOR_DIM = 4096
+CURSOR_TIMEOUT = 600000  # 10 minutes in milliseconds
 
 
 class EmbeddingManager:
@@ -70,6 +82,19 @@ class EmbeddingManager:
         await self.client.aclose()
 
 
+def chunk_discharge_summary(note_text: str) -> List[str]:
+    pattern = r"(\n\s*[^:]*:)"  # Captures section headers like 'Chief Complaint:'
+    sections = re.split(pattern, note_text)
+    chunks = []
+    for i in range(1, len(sections), 2):  # Start from header index 1
+        header = sections[i].strip()
+        if i + 1 < len(sections):
+            text = sections[i + 1].strip()
+            chunk = header + "\n" + text
+            chunks.append(chunk)
+    return chunks
+
+
 class MilvusManager:
     def __init__(self, host: str, port: int):
         self.host = host
@@ -86,13 +111,14 @@ class MilvusManager:
             FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=True),
             FieldSchema(name="patient_id", dtype=DataType.INT64),
             FieldSchema(name="note_id", dtype=DataType.VARCHAR, max_length=64),
+            FieldSchema(name="chunk_id", dtype=DataType.INT64),
             FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=dim),
         ]
         schema = CollectionSchema(fields, "Patient notes collection")
         collection = Collection(self.collection_name, schema)
 
         index_params = {
-            "metric_type": "L2",
+            "metric_type": "COSINE",
             "index_type": "IVF_FLAT",
             "params": {"nlist": 1024},
         }
@@ -100,25 +126,25 @@ class MilvusManager:
         logger.info(f"Created Milvus collection: {self.collection_name}")
         return collection
 
-    def recreate_collection(self, dim: int):
-        try:
-            Collection(self.collection_name).drop()
-            logger.info(f"Dropped existing Milvus collection: {self.collection_name}")
-        except Exception:
-            logger.info(f"No existing collection to drop: {self.collection_name}")
-        return self.create_collection(dim)
-
     def get_or_create_collection(self, dim: int) -> Collection:
-        if self.collection is None:
-            self.collection = self.recreate_collection(dim)
+        if not utility.has_collection(self.collection_name):
+            self.collection = self.create_collection(dim)
+        else:
+            self.collection = Collection(self.collection_name)
+            self.collection.load()
         return self.collection
 
     def insert_vectors(
-        self, patient_ids: List[int], note_ids: List[str], embeddings: List[List[float]]
+        self,
+        patient_ids: List[int],
+        note_ids: List[str],
+        chunk_ids: List[int],
+        embeddings: List[List[float]],
     ):
-        entities = [patient_ids, note_ids, embeddings]
+        entities = [patient_ids, note_ids, chunk_ids, embeddings]
         try:
             self.collection.insert(entities)
+            self.collection.flush()
         except Exception as e:
             logger.error(f"Error inserting vectors into Milvus: {e}")
             raise
@@ -126,16 +152,33 @@ class MilvusManager:
 
 async def process_batch(
     patient_id: int,
-    batch_texts: List[str],
-    batch_note_ids: List[str],
+    batch_notes: List[Dict],
     milvus_manager: MilvusManager,
     embedding_manager: EmbeddingManager,
 ) -> int:
     try:
-        embeddings = await embedding_manager.get_embeddings(batch_texts)
-        patient_ids = [int(patient_id)] * len(batch_texts)
-        milvus_manager.insert_vectors(patient_ids, batch_note_ids, embeddings)
-        return len(batch_texts)
+        all_texts = []
+        all_note_ids = []
+        all_chunk_ids = []
+
+        for note in batch_notes:
+            if note["note_type"] == "DS":
+                chunks = chunk_discharge_summary(note["text"])
+                for i, chunk in enumerate(chunks):
+                    all_texts.append(chunk)
+                    all_note_ids.append(note["note_id"])
+                    all_chunk_ids.append(i)
+            else:
+                all_texts.append(note["text"])
+                all_note_ids.append(note["note_id"])
+                all_chunk_ids.append(0)  # 0 for non-chunked notes
+
+        embeddings = await embedding_manager.get_embeddings(all_texts)
+        patient_ids = [int(patient_id)] * len(all_texts)
+        milvus_manager.insert_vectors(
+            patient_ids, all_note_ids, all_chunk_ids, embeddings
+        )
+        return len(all_texts)
     except Exception as e:
         logger.error(f"Error processing batch for patient {patient_id}: {e}")
         return 0
@@ -153,44 +196,55 @@ async def process_patients(
     total_notes_processed = 0
     start_time = time.time()
 
-    cursor = patients_collection.find().limit(MAX_PATIENTS)
-    patient_count = await patients_collection.count_documents({})
-    total = min(MAX_PATIENTS, patient_count)
+    # Create a new session
+    async with await mongo_client.start_session() as session:
+        # Find patients that haven't been processed yet
+        cursor = patients_collection.find(
+            {"processed": {"$ne": True}}, no_cursor_timeout=True, session=session
+        ).limit(MAX_PATIENTS)
 
-    async for patient in tqdm(cursor, total=total, desc="Processing patients"):
-        patient_id = patient["patient_id"]
-        notes = patient.get("notes", [])
-
-        if not notes:
-            logger.warning(f"Patient {patient_id} has no notes. Skipping.")
-            continue
-
-        note_texts = [note["text"] for note in notes]
-        note_ids = [note["note_id"] for note in notes]
-        patient_notes_processed = 0
-
-        # Process notes in batches
-        for i in range(0, len(note_texts), BATCH_SIZE):
-            batch_texts = note_texts[i : i + BATCH_SIZE]
-            batch_note_ids = note_ids[i : i + BATCH_SIZE]
-
-            notes_processed = await process_batch(
-                patient_id,
-                batch_texts,
-                batch_note_ids,
-                milvus_manager,
-                embedding_manager,
-            )
-            patient_notes_processed += notes_processed
-            total_notes_processed += notes_processed
-
-        patients_processed += 1
-        logger.info(
-            f"Processed patient {patient_id}: {patient_notes_processed} notes embedded"
+        patient_count = await patients_collection.count_documents(
+            {"processed": {"$ne": True}}, session=session
         )
+        total = min(MAX_PATIENTS, patient_count)
 
-        if patients_processed >= MAX_PATIENTS:
-            break
+        async for patient in tqdm(cursor, total=total, desc="Processing patients"):
+            patient_id = patient["patient_id"]
+            notes = patient.get("notes", [])
+
+            if not notes:
+                logger.warning(f"Patient {patient_id} has no notes. Skipping.")
+                continue
+
+            patient_notes_processed = 0
+
+            # Process notes in batches
+            for i in range(0, len(notes), BATCH_SIZE):
+                batch_notes = notes[i : i + BATCH_SIZE]
+
+                notes_processed = await process_batch(
+                    patient_id,
+                    batch_notes,
+                    milvus_manager,
+                    embedding_manager,
+                )
+                patient_notes_processed += notes_processed
+                total_notes_processed += notes_processed
+
+            patients_processed += 1
+            logger.info(
+                f"Processed patient {patient_id}: {patient_notes_processed} notes embedded"
+            )
+
+            # Mark patient as processed
+            await patients_collection.update_one(
+                {"patient_id": patient_id},
+                {"$set": {"processed": True}},
+                session=session,
+            )
+
+            if patients_processed >= MAX_PATIENTS:
+                break
 
     end_time = time.time()
     total_time = end_time - start_time
@@ -211,13 +265,17 @@ async def main():
     milvus_manager.connect()
 
     try:
+        # Get or create the collection
+        milvus_manager.collection = milvus_manager.get_or_create_collection(
+            dim=VECTOR_DIM
+        )
+
         await process_patients(mongo_client, milvus_manager, embedding_manager)
     except Exception as e:
         logger.error(f"An error occurred during processing: {e}")
     finally:
-        mongo_client.close()
-        connections.disconnect(MILVUS_HOST)
         await embedding_manager.close()
+        connections.disconnect(MILVUS_HOST)
 
 
 if __name__ == "__main__":

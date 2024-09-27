@@ -7,8 +7,11 @@ from typing import Dict
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from api.patients.cot import initialize_llm
 from api.patients.db import check_database_connection
-from api.routes import router as api_router
+from api.routes.auth import router as auth_router
+from api.routes.ner import router as ner_router
+from api.routes.patients import router as patients_router
 from api.users.crud import create_initial_admin
 from api.users.db import get_async_session, init_db
 
@@ -25,7 +28,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.include_router(api_router)
+app.include_router(auth_router)
+app.include_router(patients_router)
+app.include_router(ner_router)
 
 
 @app.on_event("startup")
@@ -41,6 +46,7 @@ async def startup_event() -> None:
         await init_db()
         async for session in get_async_session():
             await create_initial_admin(session)
+        await initialize_llm()
     except Exception as e:
         logger.error(f"Startup failed: {str(e)}")
         raise
@@ -59,8 +65,8 @@ async def root() -> Dict[str, str]:
     return {"message": "Welcome to the adrenaline API"}
 
 
-@app.get("/healthcheck")
-async def healthcheck() -> Dict[str, str]:
+@app.get("/health")
+async def health() -> Dict[str, str]:
     """
     Health check endpoint.
 
@@ -71,4 +77,4 @@ async def healthcheck() -> Dict[str, str]:
     Dict[str, str]
         A dictionary indicating the health status of the API.
     """
-    return {"status": "healthy"}
+    return {"status": "OK"}

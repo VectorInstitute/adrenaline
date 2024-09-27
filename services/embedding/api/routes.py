@@ -11,9 +11,8 @@ from transformers import AutoConfig, AutoModel, AutoTokenizer
 
 from api.embeddings.data import EmbeddingRequest, EmbeddingResponse
 
-
 # Increase batch size
-BATCH_SIZE = int(os.getenv("BATCH_SIZE", "8"))
+BATCH_SIZE = int(os.getenv("BATCH_SIZE", "1"))
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -54,7 +53,9 @@ def load_model() -> Tuple[AutoModel, AutoTokenizer]:
     return model, tokenizer
 
 
-model, tokenizer = load_model()
+# Global variables for model and tokenizer
+model = None
+tokenizer = None
 
 
 @torch.no_grad()
@@ -74,6 +75,8 @@ def process_batch(texts: List[str], instruction: str) -> List[List[float]]:
         The embeddings of the texts.
 
     """
+    global model, tokenizer
+
     inputs = tokenizer(
         [f"{instruction}\n{text}" for text in texts],
         padding=True,
@@ -124,3 +127,9 @@ async def create_embeddings(request: EmbeddingRequest) -> Dict[str, List[List[fl
         return {"embeddings": all_embeddings}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+def initialize_model():
+    """Initialize the model and tokenizer."""
+    global model, tokenizer
+    model, tokenizer = load_model()

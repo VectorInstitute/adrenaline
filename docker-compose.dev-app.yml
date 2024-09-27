@@ -1,0 +1,76 @@
+services:
+  frontend-dev:
+    profiles: ["frontend"]
+    build:
+      context: ./ui
+      dockerfile: Dockerfile.dev
+      args:
+        - FRONTEND_PORT=${FRONTEND_PORT}
+        - BACKEND_PORT=${BACKEND_PORT}
+        - BACKEND_HOST=${BACKEND_HOST}
+    image: vectorinstitute/adrenaline:ui-dev-${BUILD_ID}
+    env_file: .env.development
+    ports:
+      - "${FRONTEND_PORT}:${FRONTEND_PORT}"
+    environment:
+      - NEXT_PUBLIC_BACKEND_HOST=${BACKEND_HOST}
+      - NEXT_PUBLIC_BACKEND_PORT=${BACKEND_PORT}
+      - NEXT_PUBLIC_FRONTEND_PORT=${FRONTEND_PORT}
+    volumes:
+      - ./ui:/app
+      - /app/node_modules
+    depends_on:
+      - backend-dev
+    networks:
+      - app-network
+      - services-network
+
+  backend-dev:
+    build:
+      context: ./adrenaline
+      dockerfile: Dockerfile.dev
+      args:
+        - BACKEND_PORT=${BACKEND_PORT}
+        - FRONTEND_PORT=${FRONTEND_PORT}
+        - NER_SERVICE_PORT=${NER_SERVICE_PORT}
+    image: vectorinstitute/adrenaline:backend-dev-${BUILD_ID}
+    env_file: .env.development
+    ports:
+      - "${BACKEND_PORT}:${BACKEND_PORT}"
+    environment:
+      - BACKEND_PORT=${BACKEND_PORT}
+      - FRONTEND_PORT=${FRONTEND_PORT}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - NER_SERVICE_PORT=${NER_SERVICE_PORT}
+      - MONGO_USERNAME=${MONGO_USERNAME}
+      - MONGO_PASSWORD=${MONGO_PASSWORD}
+      - MONGO_HOST=mongodb
+      - MONGO_PORT=27017
+      - MEDS_DATA_DIR=${MEDS_DATA_DIR}
+      - MILVUS_HOST=milvus-standalone
+      - MILVUS_PORT=19530
+      - EMBEDDING_SERVICE_HOST=${EMBEDDING_SERVICE_HOST}
+      - EMBEDDING_SERVICE_PORT=${EMBEDDING_SERVICE_PORT}
+      - LLM_SERVICE_URL=${LLM_SERVICE_URL}
+      - LLM_SERVICE_HOST=${LLM_SERVICE_HOST}
+      - LLM_SERVICE_PORT=${LLM_SERVICE_PORT}
+    volumes:
+      - ./adrenaline:/app
+      - ${MEDS_DATA_DIR}:${MEDS_DATA_DIR}:ro
+    networks:
+      - app-network
+      - services-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${BACKEND_PORT}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  app-network:
+    driver: bridge
+  services-network:
+    external: true
+  custom-network:
+    external: true

@@ -1,20 +1,26 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { Box, Table, Thead, Tbody, Tr, Th, Td, Text, Tag, Badge, Tooltip, IconButton, Divider, useColorModeValue } from '@chakra-ui/react';
 import { FaEye } from 'react-icons/fa';
 import { ClinicalNote } from '../types/patient';
 
 interface ClinicalNotesTableProps {
   notes: ClinicalNote[];
-  handleNoteClick: (noteId: string) => void;
+  patientId: string;
 }
 
-const ClinicalNotesTable: React.FC<ClinicalNotesTableProps> = ({ notes, handleNoteClick }) => {
+const ClinicalNotesTable: React.FC<ClinicalNotesTableProps> = ({ notes, patientId }) => {
+  const router = useRouter();
   const textColor = useColorModeValue('gray.800', 'gray.100');
   const tableBorderColor = useColorModeValue('gray.200', 'gray.600');
   const tableHoverBg = useColorModeValue('gray.100', 'gray.700');
   const tableHeaderBg = useColorModeValue('gray.100', 'gray.700');
 
   const memoizedNotes = useMemo(() => notes, [notes]);
+
+  const handleNoteClick = useCallback((noteId: string) => {
+    router.push(`/note/${patientId}/${noteId}`);
+  }, [router, patientId]);
 
   return (
     <Box overflowX="auto">

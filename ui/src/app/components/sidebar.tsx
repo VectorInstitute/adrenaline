@@ -15,6 +15,7 @@ import {
   useDisclosure,
   Tooltip,
   Avatar,
+  Divider,
 } from '@chakra-ui/react'
 import { FiHome, FiLogOut, FiMenu, FiChevronLeft, FiChevronRight } from 'react-icons/fi'
 import { RiUserLine } from 'react-icons/ri'
@@ -61,10 +62,11 @@ interface SidebarContentProps {
 }
 
 const SidebarContent: React.FC<SidebarContentProps> = ({ onClose, isCollapsed, toggleSidebar, ...rest }) => {
-  const bgColor = useColorModeValue('#c5b8e8', '#2a1e5f')
-  const textColor = useColorModeValue('#2a1e5f', '#e6e0f0')
-  const borderColor = useColorModeValue('#a596d9', '#3c2b8c')
-  const toggleBtnBgColor = useColorModeValue('#a596d9', '#3c2b8c')
+  const bgColor = useColorModeValue('#e6f0fa', '#1f5280')
+  const textColor = useColorModeValue('#1f5280', '#ffffff')
+  const borderColor = useColorModeValue('#b3d1e6', '#2a6ca5')
+  const toggleBtnBgColor = useColorModeValue('#1f5280', '#3a7ab3')
+  const dividerColor = useColorModeValue('#c2d4e3', '#2a6ca5')
   const [fullLogoOpacity, setFullLogoOpacity] = useState(1)
   const [iconLogoOpacity, setIconLogoOpacity] = useState(0)
 
@@ -149,7 +151,11 @@ const SidebarContent: React.FC<SidebarContentProps> = ({ onClose, isCollapsed, t
         <VStack spacing={4} align="stretch" flex={1}>
           <NavItems textColor={textColor} isCollapsed={isCollapsed} />
         </VStack>
-        <UserSection textColor={textColor} isCollapsed={isCollapsed} />
+        <Divider borderColor={dividerColor} my={2} />
+        <Box my={2}>
+          <UserSection textColor={textColor} isCollapsed={isCollapsed} />
+        </Box>
+        <Divider borderColor={dividerColor} my={2} />
         <Flex
           direction="column"
           alignItems="center"
@@ -165,8 +171,8 @@ const SidebarContent: React.FC<SidebarContentProps> = ({ onClose, isCollapsed, t
                 h="auto"
                 mb={2}
               />
-              <Text fontSize="xs" color={textColor} textAlign="center" mt={2} mb={4}>
-                © {new Date().getFullYear()} adrenaline. All rights reserved.
+              <Text fontSize="sm" color={textColor} textAlign="center" mt={2} mb={4} fontFamily="'Roboto Slab', serif">
+                © {new Date().getFullYear()} odyssey. All rights reserved.
               </Text>
             </>
           )}
@@ -177,10 +183,10 @@ const SidebarContent: React.FC<SidebarContentProps> = ({ onClose, isCollapsed, t
               onClick={toggleSidebar}
               variant="solid"
               bg={toggleBtnBgColor}
-              color={textColor}
+              color={useColorModeValue('#ffffff', '#ffffff')}
               size="sm"
               _hover={{
-                bg: useColorModeValue('#7aa7e0', '#3a6491'),
+                bg: useColorModeValue('#3a7ab3', '#2a6ca5'),
               }}
             />
           </Tooltip>
@@ -226,9 +232,9 @@ const UserSection: React.FC<{ isCollapsed: boolean; textColor: string }> = ({ is
   const { user } = useAuth();
   const router = useRouter();
 
-  const bgColor = useColorModeValue('#c5b8e8', '#2a1e5f');
-  const iconColor = useColorModeValue('#2a1e5f', '#c5b8e8');
-  const hoverBgColor = useColorModeValue('#a596d9', '#3c2b8c');
+  const bgColor = useColorModeValue('#e6f0fa', '#1f5280');
+  const iconColor = useColorModeValue('#1f5280', '#ffffff');
+  const hoverBgColor = useColorModeValue('#b3d1e6', '#2a6ca5');
 
   const handleClick = () => {
     router.push('/profile');
@@ -242,12 +248,13 @@ const UserSection: React.FC<{ isCollapsed: boolean; textColor: string }> = ({ is
         mx={isCollapsed ? '2' : '4'}
         borderRadius="md"
         bg={bgColor}
-        mb={4}
+        mb={2}
         cursor="pointer"
         transition="all 0.2s ease"
-        _hover={{ bg: hoverBgColor, transform: 'translateY(-2px)' }}
+        _hover={{ bg: hoverBgColor, transform: 'translateY(-1px)' }}
         onClick={handleClick}
         role="group"
+        height="auto"
       >
         <Box position="relative">
           {isCollapsed ? (
@@ -273,6 +280,7 @@ const UserSection: React.FC<{ isCollapsed: boolean; textColor: string }> = ({ is
               fontWeight="medium"
               color={textColor}
               isTruncated
+              fontFamily="'Roboto Slab', serif"
             >
               {user?.username || 'User'}
             </Text>
@@ -280,6 +288,7 @@ const UserSection: React.FC<{ isCollapsed: boolean; textColor: string }> = ({ is
               fontSize="xs"
               color={textColor}
               opacity={0.8}
+              fontFamily="'Roboto Slab', serif"
             >
               {user?.role || 'Role'}
             </Text>
@@ -300,8 +309,8 @@ interface NavItemProps {
 }
 
 const NavItem: React.FC<NavItemProps> = ({ icon, children, href, textColor, isCollapsed, onClick }) => {
-  const bgHover = useColorModeValue('#a596d9', '#3c2b8c')
-  const activeColor = useColorModeValue('#2a1e5f', '#ffffff')
+  const bgHover = useColorModeValue('#b3d1e6', '#2a6ca5')
+  const activeColor = useColorModeValue('#1f5280', '#ffffff')
 
   return (
     <Tooltip label={isCollapsed ? children : ''} placement="right" hasArrow>
@@ -327,7 +336,7 @@ const NavItem: React.FC<NavItemProps> = ({ icon, children, href, textColor, isCo
         >
           <Icon
             mr={isCollapsed ? '0' : '4'}
-            fontSize="20"
+            fontSize="22"
             as={icon}
             color={textColor}
             _groupHover={{
@@ -335,7 +344,7 @@ const NavItem: React.FC<NavItemProps> = ({ icon, children, href, textColor, isCo
             }}
           />
           {!isCollapsed && (
-            <Text fontSize="sm" fontWeight="medium" color={textColor} _groupHover={{ color: activeColor }}>
+            <Text fontSize="md" fontWeight="medium" color={textColor} _groupHover={{ color: activeColor }} fontFamily="'Roboto Slab', serif">
               {children}
             </Text>
           )}
@@ -351,8 +360,8 @@ interface MobileNavProps {
 }
 
 const MobileNav: React.FC<MobileNavProps> = ({ onOpen, ...rest }) => {
-  const bgColor = useColorModeValue('#c5b8e8', '#2a1e5f')
-  const borderColor = useColorModeValue('#a596d9', '#3c2b8c')
+  const bgColor = useColorModeValue('#e6f0fa', '#1f5280')
+  const borderColor = useColorModeValue('#b3d1e6', '#2a6ca5')
 
   return (
     <Flex

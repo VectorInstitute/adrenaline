@@ -43,7 +43,7 @@ class EHRDataManager:
             try:
                 self.lazy_df = pl.scan_parquet(os.path.join(directory, "*.parquet"))
                 # Verify that the required columns exist
-                existing_columns = self.lazy_df.columns
+                existing_columns = self.lazy_df.collect_schema().names()
                 required_columns = [
                     "subject_id",
                     "hadm_id",

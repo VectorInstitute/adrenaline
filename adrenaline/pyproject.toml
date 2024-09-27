@@ -13,7 +13,7 @@ readme = "README.md"
 [tool.poetry.dependencies]
 python = ">=3.11, <3.12"
 fastapi = "^0.111.0"
-pydantic = "^1.10.11"
+pydantic = "^2.7.4"
 uvicorn = "^0.30.1"
 python-jose = {extras = ["cryptography"], version = "^3.3.0"}
 bcrypt = "3.2.0"
@@ -22,9 +22,10 @@ pyjwt = "^2.9.0"
 sqlalchemy = { version = "^2.0.32", extras = ["asyncio"] }
 aiosqlite = "^0.20.0"
 motor = "^3.5.1"
-medcat = "^1.13.0"
 polars-lts-cpu = "^1.7.0"
 pymilvus = "^2.4.6"
+langchain = "^0.3.0"
+langchain-openai = "^0.2.0"
 
 [tool.poetry.group.jupyterlab]
 optional = true

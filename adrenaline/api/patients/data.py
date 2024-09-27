@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 
 
 class Query(BaseModel):
@@ -14,9 +14,12 @@ class Query(BaseModel):
     ----------
     query : str
         The query.
+    patient_id : Optional[int] = None
+        The patient identifier.
     """
 
     query: str
+    patient_id: Optional[int] = None
 
 
 class QAPair(BaseModel):
@@ -60,6 +63,11 @@ class ClinicalNote(BaseModel):
     timestamp: datetime = Field(..., description="Timestamp of the note")
     text: str = Field(..., description="Content of the clinical note")
     note_type: str = Field(..., description="Type of the note (e.g., DS, AD, RR, AR)")
+
+    @validator("encounter_id", pre=True)
+    def convert_encounter_id_to_str(cls, v):  # noqa: N805
+        """Convert the encounter_id to a string."""
+        return str(v)
 
 
 class Event(BaseModel):

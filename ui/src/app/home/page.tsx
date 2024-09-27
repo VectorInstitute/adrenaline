@@ -2,28 +2,21 @@
 
 import React, { useState, useCallback } from 'react'
 import {
-  Box, Flex, VStack, useColorModeValue, Container, Card, CardBody,
-  Heading, useToast
+  Box, Flex, VStack, useColorModeValue, Container, Heading, useToast
 } from '@chakra-ui/react'
 import { useRouter } from 'next/navigation'
 import Sidebar from '../components/sidebar'
 import { withAuth } from '../components/with-auth'
-import { PatientData } from '../types/patient'
-import PatientCard from '../components/patient-card'
-import PatientTable from '../components/patient-table'
-import SearchBar from '../components/search-bar'
+import SearchBox from '../components/search-box'
 
 const HomePage: React.FC = () => {
-  const [patientData, setPatientData] = useState<PatientData | PatientData[]>([])
   const [isLoading, setIsLoading] = useState<boolean>(false)
   const router = useRouter()
   const toast = useToast()
 
   const bgColor = useColorModeValue('gray.50', 'gray.900')
-  const cardBgColor = useColorModeValue('white', 'gray.800')
-  const borderColor = useColorModeValue('teal.200', 'teal.700')
 
-  const searchPatients = useCallback(async (query: string) => {
+  const handleSearch = useCallback(async (query: string, isPatientMode: boolean) => {
     if (!query.trim()) {
       toast({
         title: "Error",
@@ -40,29 +33,14 @@ const HomePage: React.FC = () => {
       const token = localStorage.getItem('token')
       if (!token) throw new Error('No token found')
 
-      let response: Response
-      const patientIdNumber = Number(query)
-      if (!isNaN(patientIdNumber)) {
-        response = await fetch(`/api/patient_data/${patientIdNumber}`, {
-          headers: { 'Authorization': `Bearer ${token}` },
-        })
-
-        if (response.status === 404) {
-          setPatientData([])
-          toast({
-            title: "Info",
-            description: "No data found for this patient",
-            status: "info",
-            duration: 3000,
-            isClosable: true,
-          })
-          return
+      if (isPatientMode) {
+        const patientId = Number(query)
+        if (isNaN(patientId)) {
+          throw new Error('Invalid patient ID')
         }
-
-        const data: PatientData = await response.json()
-        setPatientData(data)
+        router.push(`/patient/${patientId}`)
       } else {
-        response = await fetch('/api/retrieve', {
+        const response = await fetch('/api/generate_cot_answer', {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -71,63 +49,64 @@ const HomePage: React.FC = () => {
           body: JSON.stringify({ query }),
         })
 
-        const data: PatientData[] = await response.json()
-        setPatientData(data)
-      }
+        if (!response.ok) {
+          throw new Error('Failed to generate answer')
+        }
 
-      toast({
-        title: "Success",
-        description: "Patient data loaded successfully",
-        status: "success",
-        duration: 3000,
-        isClosable: true,
-      })
+        const reader = response.body?.getReader()
+        if (!reader) throw new Error('Failed to read response')
+
+        let pageId: string | null = null
+
+        const decoder = new TextDecoder()
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+
+          const chunk = decoder.decode(value)
+          const lines = chunk.split('\n')
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const data = JSON.parse(line.slice(6))
+              if (data.type === 'page_id') {
+                pageId = data.content
+                break
+              }
+            }
+          }
+          if (pageId) break
+        }
+
+        if (pageId) {
+          router.push(`/answer/${pageId}`)
+        } else {
+          throw new Error('Failed to get page ID')
+        }
+      }
     } catch (error) {
-      console.error('Error loading patient data:', error)
+      console.error('Error:', error)
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : "An error occurred while loading patient data",
+        description: error instanceof Error ? error.message : "An error occurred",
         status: "error",
         duration: 3000,
         isClosable: true,
       })
-      setPatientData([])
     } finally {
       setIsLoading(false)
     }
-  }, [toast])
-
-  const handleNoteClick = useCallback((patientId: string, noteId: string) => {
-    router.push(`/note/${patientId}/${noteId}`)
-  }, [router])
+  }, [router, toast])
 
   return (
     <Flex minHeight="100vh" bg={bgColor}>
       <Sidebar />
-      <Box flex={1} ml={{ base: 0, md: 60 }} transition="margin-left 0.3s" p={{ base: 4, md: 6 }}>
-        <Container maxW="container.xl" px={0}>
-          <VStack spacing={6} align="stretch" justify="center" minHeight="100vh">
-            <Heading as="h1" size="xl" mb={8} textAlign="center" color="teal.600">
+      <Box flex={1} ml={{ base: 0, md: 72 }} transition="margin-left 0.3s" p={{ base: 5, md: 7 }}>
+        <Container maxW="container.xl" px={0} display="flex" flexDirection="column" justifyContent="center" alignItems="center" height="100%">
+          <VStack spacing={7} align="center" justify="center" width="100%">
+            <Heading as="h1" size="2xl" mb={10} textAlign="center" color="#1f5280" fontFamily="'Roboto Slab', serif">
               Where Patient Discovery Begins
             </Heading>
-            <Card bg={cardBgColor} p={6} borderRadius="xl" shadow="md" borderWidth={1} borderColor={borderColor} _hover={{ shadow: 'lg' }} transition="all 0.3s">
-              <CardBody>
-                <SearchBar onSearch={searchPatients} isLoading={isLoading} />
-              </CardBody>
-            </Card>
-
-            {Array.isArray(patientData) && patientData.length > 0 ? (
-              <Card p={4} borderRadius="xl" shadow="md" borderWidth={1} borderColor={borderColor}>
-                <CardBody>
-                  <PatientTable patients={patientData} />
-                </CardBody>
-              </Card>
-            ) : !Array.isArray(patientData) && patientData.patient_id ? (
-              <PatientCard
-                patientData={patientData}
-                handleNoteClick={(noteId) => handleNoteClick(patientData.patient_id.toString(), noteId)}
-              />
-            ) : null}
+            <SearchBox onSearch={handleSearch} isLoading={isLoading} />
           </VStack>
         </Container>
       </Box>
