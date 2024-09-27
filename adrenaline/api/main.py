@@ -9,8 +9,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.patients.cot import initialize_llm
 from api.patients.db import check_database_connection
+from api.routes.answer import router as answer_router
 from api.routes.auth import router as auth_router
 from api.routes.ner import router as ner_router
+from api.routes.pages import router as pages_router
 from api.routes.patients import router as patients_router
 from api.users.crud import create_initial_admin
 from api.users.db import get_async_session, init_db
@@ -31,6 +33,8 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(patients_router)
 app.include_router(ner_router)
+app.include_router(answer_router)
+app.include_router(pages_router)
 
 
 @app.on_event("startup")

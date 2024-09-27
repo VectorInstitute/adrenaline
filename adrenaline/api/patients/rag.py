@@ -107,6 +107,7 @@ async def retrieve_relevant_notes(
     """Retrieve the relevant notes."""
     query_embedding = await embedding_manager.get_embedding(query)
     search_results = await milvus_manager.search(query_embedding, patient_id, top_k)
+    logger.info(f"Search results: {search_results}")
     note_dict = {note.note_id: note for note in patient_notes}
     relevant_notes = []
     for result in search_results:

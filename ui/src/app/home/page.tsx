@@ -14,7 +14,10 @@ const HomePage: React.FC = () => {
   const router = useRouter()
   const toast = useToast()
 
-  const bgColor = useColorModeValue('gray.50', 'gray.900')
+  const bgGradient = useColorModeValue(
+    'linear(to-br, blue.50, blue.100, blue.200)',
+    'linear(to-br, gray.900, gray.800, gray.700)'
+  )
 
   const handleSearch = useCallback(async (query: string, isPatientMode: boolean) => {
     if (!query.trim()) {
@@ -98,10 +101,38 @@ const HomePage: React.FC = () => {
   }, [router, toast])
 
   return (
-    <Flex minHeight="100vh" bg={bgColor}>
+    <Flex minHeight="100vh">
       <Sidebar />
-      <Box flex={1} ml={{ base: 0, md: 72 }} transition="margin-left 0.3s" p={{ base: 5, md: 7 }}>
-        <Container maxW="container.xl" px={0} display="flex" flexDirection="column" justifyContent="center" alignItems="center" height="100%">
+      <Box
+        flex={1}
+        ml={{ base: 0, md: 60 }} // Adjust this value to match your sidebar width
+        position="relative"
+        overflow="hidden"
+        bgGradient={bgGradient}
+      >
+        <Box
+          position="absolute"
+          top="-15%"
+          right="-7%"
+          width="95%"
+          height="120%"
+          bg={useColorModeValue('blue.50', 'gray.800')}
+          transform="rotate(15deg)"
+          boxShadow="xl"
+          borderRadius="30% 0 0 70%"
+          zIndex="0"
+        />
+        <Container
+          maxW="container.xl"
+          px={0}
+          display="flex"
+          flexDirection="column"
+          justifyContent="center"
+          alignItems="center"
+          height="100vh"
+          position="relative"
+          zIndex="1"
+        >
           <VStack spacing={7} align="center" justify="center" width="100%">
             <Heading as="h1" size="2xl" mb={10} textAlign="center" color="#1f5280" fontFamily="'Roboto Slab', serif">
               Where Patient Discovery Begins
