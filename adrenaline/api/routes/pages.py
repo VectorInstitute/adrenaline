@@ -1,17 +1,17 @@
 """Routes for managing pages."""
 
 import logging
-from datetime import datetime
-from typing import Dict
+from datetime import UTC, datetime
+from typing import List
 
-from bson import ObjectId
+from bson import InvalidId, ObjectId
 from fastapi import APIRouter, Body, Depends, HTTPException
 from motor.motor_asyncio import AsyncIOMotorDatabase
+from pydantic import BaseModel
 
+from api.pages.data import Page, Query, QueryAnswer
 from api.patients.db import get_database
-from api.users.auth import (
-    get_current_active_user,
-)
+from api.users.auth import get_current_active_user
 from api.users.data import User
 
 
@@ -22,64 +22,42 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+class CreatePageRequest(BaseModel):
+    """Request body for creating a new page."""
+
+    query: str
+
+
 @router.post("/pages/create")
 async def create_page(
-    original_query: str = Body(...),  # noqa: B008
-    answer: str = Body(...),  # noqa: B008
+    request: CreatePageRequest,
     db: AsyncIOMotorDatabase = Depends(get_database),  # noqa: B008
     current_user: User = Depends(get_current_active_user),  # noqa: B008
-) -> Dict[str, str]:
-    """Create a new page for a user.
-
-    Parameters
-    ----------
-    original_query : str
-        The original query that the user asked.
-    answer : str
-        The answer to the original query.
-    db : AsyncIOMotorDatabase
-        The database to use.
-    current_user : User
-        The current active user.
-
-    Returns
-    -------
-    Dict[str, str]
-        The ID of the created page.
-    """
-    page_data = {
-        "user_id": str(current_user.id),
-        "original_query": original_query,
-        "responses": [{"answer": answer, "created_at": datetime.utcnow()}],
-        "follow_ups": [],
-    }
-    result = await db.pages.insert_one(page_data)
-    return {"page_id": str(result.inserted_id)}
+) -> dict:
+    """Create a new page for a user."""
+    logger.info(f"Creating page for user {current_user.id} with query {request.query}")
+    now = datetime.now(UTC)
+    page_id = str(ObjectId())
+    page_data = Page(
+        id=page_id,
+        user_id=str(current_user.id),
+        query_answers=[QueryAnswer(query=Query(query=request.query), is_first=True)],
+        created_at=now,
+        updated_at=now,
+    )
+    await db.pages.insert_one(page_data.dict())
+    return {"page_id": page_id}
 
 
 @router.post("/pages/{page_id}/append")
 async def append_to_page(
     page_id: str,
-    question: str = Body(...),  # noqa: B008
-    answer: str = Body(...),  # noqa: B008
+    question: str = Body(...),
+    answer: str = Body(...),
     db: AsyncIOMotorDatabase = Depends(get_database),  # noqa: B008
     current_user: User = Depends(get_current_active_user),  # noqa: B008
-) -> Dict[str, str]:
-    """Append a follow-up question and answer to an existing page.
-
-    Parameters
-    ----------
-    page_id : str
-        The ID of the page to append to.
-    question : str
-        The question to append.
-    answer : str
-
-    Returns
-    -------
-    Dict[str, str]
-        The status of the operation.
-    """
+) -> dict:
+    """Append a follow-up question and answer to an existing page."""
     existing_page = await db.pages.find_one(
         {"_id": ObjectId(page_id), "user_id": str(current_user.id)}
     )
@@ -88,67 +66,43 @@ async def append_to_page(
 
     updated_data = {
         "$push": {
-            "follow_ups": {
-                "question": question,
-                "answer": answer,
-                "created_at": datetime.utcnow(),
+            "query_answers": {
+                "query": {"query": question},
+                "answer": {"answer": answer, "reasoning": ""},
+                "is_first": False,
             }
-        }
+        },
+        "$set": {"updated_at": datetime.now(UTC)},
     }
     await db.pages.update_one({"_id": ObjectId(page_id)}, updated_data)
     return {"status": "success"}
 
 
-@router.get("/pages/{page_id}")
+@router.get("/pages/history", response_model=List[Page])
+async def get_user_page_history(
+    db: AsyncIOMotorDatabase = Depends(get_database),  # noqa: B008
+    current_user: User = Depends(get_current_active_user),  # noqa: B008
+) -> List[Page]:
+    """Retrieve all pages for the current user."""
+    cursor = db.pages.find({"user_id": str(current_user.id)}).sort("created_at", -1)
+    pages = await cursor.to_list(length=None)
+
+    return [Page(**page) for page in pages]
+
+
+@router.get("/pages/{page_id}", response_model=Page)
 async def get_page(
     page_id: str,
     db: AsyncIOMotorDatabase = Depends(get_database),  # noqa: B008
     current_user: User = Depends(get_current_active_user),  # noqa: B008
-) -> Dict[str, str]:
-    """Retrieve a specific page.
-
-    Parameters
-    ----------
-    page_id : str
-        The ID of the page to retrieve.
-    db : AsyncIOMotorDatabase
-        The database to use.
-    current_user : User
-
-    Returns
-    -------
-    Dict[str, str]
-        The page data.
-    """
-    page = await db.pages.find_one(
-        {"_id": ObjectId(page_id), "user_id": str(current_user.id)}
-    )
+) -> Page:
+    """Retrieve a specific page."""
+    try:
+        _ = ObjectId(page_id)
+    except InvalidId as e:
+        raise HTTPException(status_code=400, detail="Invalid page ID") from e
+    page = await db.pages.find_one({"id": page_id, "user_id": str(current_user.id)})
     if not page:
         raise HTTPException(status_code=404, detail="Page not found")
-    page["_id"] = str(page["_id"])  # Convert ObjectId to string
-    return page
 
-
-@router.get("/pages")
-async def get_user_pages(
-    db: AsyncIOMotorDatabase = Depends(get_database),  # noqa: B008
-    current_user: User = Depends(get_current_active_user),  # noqa: B008
-) -> Dict[str, str]:
-    """Retrieve all pages for the current user.
-
-    Parameters
-    ----------
-    db : AsyncIOMotorDatabase
-        The database to use.
-    current_user : User
-
-    Returns
-    -------
-    Dict[str, str]
-        The pages data.
-    """
-    cursor = db.pages.find({"user_id": str(current_user.id)})
-    pages = await cursor.to_list(length=None)
-    for page in pages:
-        page["_id"] = str(page["_id"])  # Convert ObjectId to string
-    return pages
+    return Page(**page)

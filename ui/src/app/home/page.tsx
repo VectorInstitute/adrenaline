@@ -43,45 +43,26 @@ const HomePage: React.FC = () => {
         }
         router.push(`/patient/${patientId}`)
       } else {
-        const response = await fetch('/api/generate_cot_answer', {
+        // Create a new page
+        const createPageResponse = await fetch('/api/pages/create', {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ query }),
+          body: JSON.stringify({ query: query }),
         })
 
-        if (!response.ok) {
-          throw new Error('Failed to generate answer')
+        if (!createPageResponse.ok) {
+          const errorData = await createPageResponse.json();
+          throw new Error(`Failed to create new page: ${JSON.stringify(errorData)}`);
         }
 
-        const reader = response.body?.getReader()
-        if (!reader) throw new Error('Failed to read response')
+        const { page_id } = await createPageResponse.json()
 
-        let pageId: string | null = null
-
-        const decoder = new TextDecoder()
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-
-          const chunk = decoder.decode(value)
-          const lines = chunk.split('\n')
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              const data = JSON.parse(line.slice(6))
-              if (data.type === 'page_id') {
-                pageId = data.content
-                break
-              }
-            }
-          }
-          if (pageId) break
-        }
-
-        if (pageId) {
-          router.push(`/answer/${pageId}`)
+        if (page_id) {
+          // Redirect to the new page
+          router.push(`/answer/${page_id}`)
         } else {
           throw new Error('Failed to get page ID')
         }

@@ -1,38 +1,49 @@
 'use client'
 
-import React, { useEffect, useState, useCallback } from 'react'
-import { useParams } from 'next/navigation'
+import React, { useEffect, useState } from 'react'
+import { useParams, useRouter } from 'next/navigation'
 import {
   Box, Flex, VStack, useColorModeValue, Container, Card, CardBody,
-  useToast, Skeleton, Text, Heading
+  useToast, Skeleton, Text, Heading, Button
 } from '@chakra-ui/react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion, MotionProps } from 'framer-motion'
 import Sidebar from '../../components/sidebar'
 import { withAuth } from '../../components/with-auth'
 import SearchBox from '../../components/search-box'
 import AnswerCard from '../../components/answer-card'
 import StepsCard from '../../components/steps-card'
 
-const MotionBox = motion(Box)
+const MotionBox = motion<Omit<React.ComponentProps<typeof Box> & MotionProps, "transition">>(Box)
+
+interface QueryAnswer {
+  query: {
+    query: string;
+    patient_id?: number;
+    steps?: Array<{ step: string; reasoning: string }>;
+  };
+  answer?: {
+    answer: string;
+    reasoning: string;
+  };
+  is_first: boolean;
+}
 
 interface PageData {
-  original_query: string;
-  responses: Array<{
-    answer: string;
-    created_at: string;
-  }>;
-  follow_ups: Array<any>;
+  id: string;
+  user_id: string;
+  query_answers: QueryAnswer[];
+  created_at: string;
+  updated_at: string;
 }
 
 const AnswerPage: React.FC = () => {
   const [pageData, setPageData] = useState<PageData | null>(null)
   const [isLoading, setIsLoading] = useState<boolean>(true)
-  const [isSearching, setIsSearching] = useState<boolean>(false)
-  const [steps, setSteps] = useState<Array<{ step: string; reasoning: string }>>([])
-  const [answer, setAnswer] = useState<string | null>(null)
-  const [reasoning, setReasoning] = useState<string | null>(null)
+  const [isGeneratingSteps, setIsGeneratingSteps] = useState<boolean>(false)
   const [isGeneratingAnswer, setIsGeneratingAnswer] = useState<boolean>(false)
-  const { id } = useParams()
+  const params = useParams()
+  const id = params?.id as string
+  const router = useRouter()
   const toast = useToast()
 
   const bgColor = useColorModeValue('gray.50', 'gray.900')
@@ -45,17 +56,24 @@ const AnswerPage: React.FC = () => {
         const token = localStorage.getItem('token')
         if (!token) throw new Error('No token found')
 
-        const response = await fetch(`/api/page_data/${id}`, {
+        const response = await fetch(`/api/pages/${id}`, {
           headers: { 'Authorization': `Bearer ${token}` },
         })
 
         if (!response.ok) {
+          console.error('Response status:', response.status)
+          console.error('Response text:', await response.text())
           throw new Error('Failed to fetch page data')
         }
 
         const data: PageData = await response.json()
+        console.log('Fetched page data:', data)  // Add this line for debugging
         setPageData(data)
-        setAnswer(data.responses[0]?.answer || null)
+
+        // Automatically generate steps if they don't exist
+        if (data.query_answers[0] && !data.query_answers[0].query.steps) {
+          await generateSteps(data.query_answers[0].query.query, data.query_answers[0].query.patient_id)
+        }
       } catch (error) {
         console.error('Error loading page data:', error)
         toast({
@@ -70,10 +88,111 @@ const AnswerPage: React.FC = () => {
       }
     }
 
-    fetchPageData()
+    if (id) {
+      fetchPageData()
+    }
   }, [id, toast])
 
-  const handleSearch = useCallback(async (query: string) => {
+  const generateSteps = async (query: string, patientId?: number) => {
+    setIsGeneratingSteps(true)
+    try {
+      const token = localStorage.getItem('token')
+      if (!token) throw new Error('No token found')
+
+      const stepsResponse = await fetch('/api/generate_cot_steps', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ query, patient_id: patientId }),
+      })
+
+      if (!stepsResponse.ok) {
+        throw new Error('Failed to generate steps')
+      }
+
+      const stepsData = await stepsResponse.json()
+
+      // Update the page data with the new steps
+      setPageData(prevData => {
+        if (!prevData) return null
+        const updatedQueryAnswers = prevData.query_answers.map(qa => {
+          if (qa.is_first) {
+            return { ...qa, query: { ...qa.query, steps: stepsData.cot_steps } }
+          }
+          return qa
+        })
+        return { ...prevData, query_answers: updatedQueryAnswers }
+      })
+
+      // Automatically generate answer after steps are generated
+      await generateAnswer(query, patientId, stepsData.cot_steps)
+    } catch (error) {
+      console.error('Error:', error)
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "An error occurred while generating steps",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+      })
+    } finally {
+      setIsGeneratingSteps(false)
+    }
+  }
+
+  const generateAnswer = async (query: string, patientId?: number, steps?: Array<{ step: string; reasoning: string }>) => {
+    setIsGeneratingAnswer(true)
+    try {
+      const token = localStorage.getItem('token')
+      if (!token) throw new Error('No token found')
+
+      const answerResponse = await fetch('/api/generate_cot_answer', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          query,
+          patient_id: patientId,
+          steps
+        }),
+      })
+
+      if (!answerResponse.ok) {
+        throw new Error('Failed to generate answer')
+      }
+
+      const answerData = await answerResponse.json()
+
+      // Update the page data with the new answer
+      setPageData(prevData => {
+        if (!prevData) return null
+        const updatedQueryAnswers = prevData.query_answers.map(qa => {
+          if (qa.is_first) {
+            return { ...qa, answer: answerData }
+          }
+          return qa
+        })
+        return { ...prevData, query_answers: updatedQueryAnswers }
+      })
+    } catch (error) {
+      console.error('Error:', error)
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "An error occurred while generating the answer",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+      })
+    } finally {
+      setIsGeneratingAnswer(false)
+    }
+  }
+
+  const handleSearch = async (query: string) => {
     if (!query.trim()) {
       toast({
         title: "Error",
@@ -85,58 +204,28 @@ const AnswerPage: React.FC = () => {
       return
     }
 
-    setIsSearching(true)
-    setSteps([])
-    setAnswer(null)
-    setReasoning(null)
-    setIsGeneratingAnswer(false)
-
     try {
       const token = localStorage.getItem('token')
       if (!token) throw new Error('No token found')
 
-      const response = await fetch('/api/generate_cot_answer', {
+      // Create a new page
+      const createPageResponse = await fetch('/api/pages/create', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ query, patient_id: id }),
+        body: JSON.stringify({ query }),
       })
 
-      if (!response.ok) {
-        throw new Error('Failed to generate answer')
+      if (!createPageResponse.ok) {
+        throw new Error('Failed to create new page')
       }
 
-      const reader = response.body?.getReader()
-      if (!reader) throw new Error('Failed to read response')
+      const { page_id } = await createPageResponse.json()
 
-      const decoder = new TextDecoder()
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        const chunk = decoder.decode(value)
-        const lines = chunk.split('\n')
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = JSON.parse(line.slice(6))
-            switch (data.type) {
-              case 'step':
-                setSteps(prevSteps => [...prevSteps, data.content])
-                break
-              case 'answer':
-                setIsGeneratingAnswer(true)
-                setAnswer(data.content.answer)
-                setReasoning(data.content.reasoning)
-                break
-              case 'error':
-                throw new Error(data.content)
-            }
-          }
-        }
-      }
-
+      // Redirect to the new page
+      router.push(`/answer/${page_id}`)
     } catch (error) {
       console.error('Error:', error)
       toast({
@@ -146,11 +235,10 @@ const AnswerPage: React.FC = () => {
         duration: 3000,
         isClosable: true,
       })
-    } finally {
-      setIsSearching(false)
-      setIsGeneratingAnswer(false)
     }
-  }, [id, toast])
+  }
+
+  const firstQueryAnswer = pageData?.query_answers.find(qa => qa.is_first)
 
   return (
     <Flex minHeight="100vh" bg={bgColor}>
@@ -166,11 +254,11 @@ const AnswerPage: React.FC = () => {
             >
               {isLoading ? (
                 <Skeleton height="100px" />
-              ) : pageData ? (
+              ) : firstQueryAnswer ? (
                 <Card bg={cardBgColor} shadow="md">
                   <CardBody>
                     <Heading as="h2" size="lg" mb={4}>Original Query</Heading>
-                    <Text>{pageData.original_query}</Text>
+                    <Text>{firstQueryAnswer.query.query}</Text>
                   </CardBody>
                 </Card>
               ) : (
@@ -181,33 +269,31 @@ const AnswerPage: React.FC = () => {
                 </Card>
               )}
             </MotionBox>
-            <Box>
-              <SearchBox onSearch={handleSearch} isLoading={isSearching} />
-            </Box>
-            <AnimatePresence>
-              {steps.length > 0 && (
-                <MotionBox
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
-                  transition={{ duration: 0.5 }}
-                >
-                  <StepsCard steps={steps} isGeneratingAnswer={isGeneratingAnswer} />
-                </MotionBox>
-              )}
-            </AnimatePresence>
-            <AnimatePresence>
-              {(isGeneratingAnswer || answer) && (
-                <MotionBox
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
-                  transition={{ duration: 0.5 }}
-                >
-                  <AnswerCard answer={answer} reasoning={reasoning} isLoading={isGeneratingAnswer} />
-                </MotionBox>
-              )}
-            </AnimatePresence>
+            {!pageData && (
+              <Box>
+                <SearchBox onSearch={handleSearch} isLoading={isLoading} />
+              </Box>
+            )}
+            {firstQueryAnswer?.query.steps && (
+              <MotionBox
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ duration: 0.5 }}
+              >
+                <StepsCard steps={firstQueryAnswer.query.steps} isGeneratingAnswer={isGeneratingAnswer} />
+              </MotionBox>
+            )}
+            {firstQueryAnswer?.answer && (
+              <MotionBox
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ duration: 0.5 }}
+              >
+                <AnswerCard answer={firstQueryAnswer.answer.answer} reasoning={firstQueryAnswer.answer.reasoning} isLoading={isGeneratingAnswer} />
+              </MotionBox>
+            )}
           </VStack>
         </Container>
       </Box>

@@ -1,18 +1,14 @@
 """Routes for generating answers."""
 
-import asyncio
-import json
 import logging
 import os
-from datetime import datetime
-from typing import Dict, List
+from typing import Any, Dict, List
 
 from fastapi import APIRouter, Body, Depends, HTTPException
-from fastapi.responses import StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
+from api.pages.data import CoTStep, Query
 from api.patients.cot import generate_cot_answer, generate_cot_steps
-from api.patients.data import Query
 from api.patients.db import get_database
 from api.patients.rag import EmbeddingManager, MilvusManager, retrieve_relevant_notes
 from api.routes.patients import get_patient_data
@@ -49,89 +45,121 @@ MILVUS_MANAGER = MilvusManager(MILVUS_HOST, MILVUS_PORT)
 MILVUS_MANAGER.connect()
 
 
-@router.post("/generate_cot_answer")
-async def generate_cot_answer_endpoint(
-    query: Query = Body(...),  # noqa: B008
-    db: AsyncIOMotorDatabase = Depends(get_database),  # noqa: B008
-    current_user: User = Depends(get_current_active_user),  # noqa: B008
-):
-    """Generate a Chain of Thought answer for a user query."""
-
-    async def event_stream():
-        try:
-            mode = "patient" if query.patient_id else "general"
-            context = ""
-
-            if mode == "patient":
-                patient_data = await get_patient_data(
-                    query.patient_id, db, current_user
-                )
-                relevant_notes = await retrieve_relevant_notes(
-                    query.query,
-                    patient_data.notes,
-                    EMBEDDING_MANAGER,
-                    MILVUS_MANAGER,
-                    query.patient_id,
-                )
-                context = "\n".join([note.text for note in relevant_notes])
-            else:
-                context = ""
-
-            steps = await generate_cot_steps(query.query, mode, context)
-            for step in steps:
-                yield f"data: {json.dumps({'type': 'step', 'content': step})}\n\n"
-                await asyncio.sleep(0.1)  # Simulate some delay between steps
-
-            answer, reasoning = await generate_cot_answer(
-                query.query, mode, context, steps
-            )
-            yield f"data: {json.dumps({'type': 'answer', 'content': {'answer': answer, 'reasoning': reasoning}})}\n\n"
-
-            # Create a new page
-            page_data = {
-                "user_id": str(current_user.id),
-                "original_query": query.query,
-                "responses": [{"answer": answer, "created_at": datetime.utcnow()}],
-                "follow_ups": [],
-            }
-            result = await db.pages.insert_one(page_data)
-            page_id = str(result.inserted_id)
-
-            yield f"data: {json.dumps({'type': 'page_id', 'content': page_id})}\n\n"
-
-        except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
-
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
-
-
 @router.post("/generate_cot_steps")
 async def generate_cot_steps_endpoint(
     query: Query = Body(...),  # noqa: B008
     db: AsyncIOMotorDatabase = Depends(get_database),  # noqa: B008
     current_user: User = Depends(get_current_active_user),  # noqa: B008
 ) -> Dict[str, List[Dict[str, str]]]:
-    """Generate Chain of Thought steps for a user query."""
+    """Generate a chain of thought steps for a given query."""
     try:
         mode = "patient" if query.patient_id else "general"
         context = ""
 
         if mode == "patient":
-            logger.info(f"Retrieving patient data for patient ID {query.patient_id}")
             patient_data = await get_patient_data(query.patient_id, db, current_user)
             relevant_notes = await retrieve_relevant_notes(
-                query.query,
-                patient_data.notes,
-                EMBEDDING_MANAGER,
-                MILVUS_MANAGER,
-                query.patient_id,
+                user_query=query.query,
+                notes=patient_data.notes,
+                embedding_manager=EMBEDDING_MANAGER,
+                milvus_manager=MILVUS_MANAGER,
+                patient_id=query.patient_id,
             )
             context = "\n".join([note.text for note in relevant_notes])
 
-        steps = await generate_cot_steps(query.query, mode, context)
-        return {"cot_steps": steps}
+        steps = await generate_cot_steps(
+            user_query=query.query,
+            mode=mode,
+            context=context,
+        )
 
+        # Update the page with the generated steps
+        page = await db.pages.find_one({"query_answers.query.query": query.query})
+        if page:
+            await db.pages.update_one(
+                {"_id": page["_id"]},
+                {
+                    "$set": {
+                        "query_answers.$[elem].query.steps": [
+                            step.dict() for step in steps
+                        ]
+                    }
+                },
+                array_filters=[{"elem.query.query": query.query}],
+            )
+
+        return {"cot_steps": [step.dict() for step in steps]}
+
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve)) from ve
     except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"An error occurred: {str(e)}"
+        ) from e
+
+
+@router.post("/generate_cot_answer")
+async def generate_cot_answer_endpoint(
+    query: Query = Body(...),  # noqa: B008
+    db: AsyncIOMotorDatabase = Depends(get_database),  # noqa: B008
+    current_user: User = Depends(get_current_active_user),  # noqa: B008
+) -> Dict[str, Any]:
+    """Generate a chain of thought answer for a given query."""
+    try:
+        mode = "patient" if query.patient_id else "general"
+        context = ""
+
+        if mode == "patient":
+            patient_data = await get_patient_data(query.patient_id, db, current_user)
+            relevant_notes = await retrieve_relevant_notes(
+                user_query=query.query,
+                notes=patient_data.notes,
+                embedding_manager=EMBEDDING_MANAGER,
+                milvus_manager=MILVUS_MANAGER,
+                patient_id=query.patient_id,
+            )
+            context = "\n".join([note.text for note in relevant_notes])
+
+        cot_steps = (
+            query.steps
+            if query.steps
+            else await generate_cot_steps(query.query, mode, context)
+        )
+        answer, reasoning = await generate_cot_answer(
+            user_query=query.query,
+            steps=cot_steps,
+            mode=mode,
+            context=context,
+        )
+
+        # Update the page with the generated answer
+        page = await db.pages.find_one({"query_answers.query.query": query.query})
+        if page:
+            await db.pages.update_one(
+                {"_id": page["_id"]},
+                {
+                    "$set": {
+                        "query_answers.$[elem].answer": {
+                            "answer": answer,
+                            "reasoning": reasoning,
+                        }
+                    }
+                },
+                array_filters=[{"elem.query.query": query.query}],
+            )
+
+        return {
+            "answer": answer,
+            "reasoning": reasoning,
+            "steps": [step.model_dump() for step in cot_steps]
+            if isinstance(cot_steps[0], CoTStep)
+            else cot_steps,
+        }
+
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve)) from ve
+    except Exception as e:
+        logger.exception("An error occurred in generate_cot_answer_endpoint")
         raise HTTPException(
             status_code=500, detail=f"An error occurred: {str(e)}"
         ) from e

@@ -9,7 +9,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-from api.patients.data import NERResponse
+from api.ner.data import NERResponse
 from api.patients.db import get_database
 from api.users.auth import (
     get_current_active_user,

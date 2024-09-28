@@ -4,14 +4,14 @@ import asyncio
 import json
 import logging
 import os
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 from langchain.chains import LLMChain
 from langchain.prompts import PromptTemplate
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_openai import ChatOpenAI
-from pydantic import BaseModel, Field
 
+from api.pages.data import Answer, CoTStep, CoTSteps
 from api.patients.prompts import (
     general_answer_template,
     general_cot_template,
@@ -45,28 +45,6 @@ try:
 except Exception as e:
     logger.error(f"Error initializing ChatOpenAI: {str(e)}")
     raise
-
-
-class CoTStep(BaseModel):
-    """A single step in the chain of thought process."""
-
-    step: str = Field(description="A single step in the chain of thought process")
-    reasoning: str = Field(description="The reasoning behind this step")
-
-
-class CoTSteps(BaseModel):
-    """A list of steps in the chain of thought process."""
-
-    steps: List[CoTStep] = Field(
-        description="List of steps in the chain of thought process"
-    )
-
-
-class Answer(BaseModel):
-    """The answer to the query."""
-
-    answer: str = Field(description="The answer to the query")
-    reasoning: str = Field(description="The reasoning for the answer")
 
 
 steps_parser = PydanticOutputParser(pydantic_object=CoTSteps)
@@ -131,22 +109,27 @@ def parse_llm_output_answer(output: str) -> Tuple[str, str]:
 
 async def generate_cot_answer(
     user_query: str,
+    steps: List[CoTStep],
     mode: str = "general",
     context: str = "",
-    steps: Optional[List[Dict[str, Any]]] = None,
 ) -> Tuple[str, str]:
     """Generate the answer for a CoT prompt."""
     logger.info(
         f"Starting generate_cot_answer for query: {user_query[:50]}... in {mode} mode"
     )
-    steps_str = "\n".join([f"{step['step']}" for step in steps])
+    steps_text = "\n".join(
+        [
+            f"Step {i+1}: {step.step}\nReasoning: {step.reasoning}"
+            for i, step in enumerate(steps)
+        ]
+    )
     try:
         logger.info("Attempting to run the chain...")
         if mode == "general":
             result = await asyncio.to_thread(
                 general_answer_chain.run,
                 human_input=user_query,
-                steps=steps_str,
+                steps=steps_text,
                 format_instructions=answer_parser.get_format_instructions(),
             )
         elif mode == "patient":
@@ -154,7 +137,7 @@ async def generate_cot_answer(
                 patient_answer_chain.run,
                 context=context,
                 human_input=user_query,
-                steps=steps_str,
+                steps=steps_text,
                 format_instructions=answer_parser.get_format_instructions(),
             )
         else:
@@ -197,9 +180,11 @@ async def generate_cot_steps(
         else:
             raise ValueError(f"Invalid mode: {mode}")
         logger.info(f"Chain run successful. Result: {result}")
-        steps_list = parse_llm_output_steps(result)
-        logger.info(f"Generated {len(steps_list)} CoT steps")
-        return steps_list
+        steps = parse_llm_output_steps(result)
+        logger.info(f"Generated {len(steps)} CoT steps")
+        return [
+            CoTStep(step=step["step"], reasoning=step["reasoning"]) for step in steps
+        ]
     except ValueError as ve:
         logger.error(f"Error parsing LLM output: {str(ve)}")
         raise

@@ -17,7 +17,7 @@ import {
   Avatar,
   Divider,
 } from '@chakra-ui/react'
-import { FiHome, FiLogOut, FiMenu, FiChevronLeft, FiChevronRight } from 'react-icons/fi'
+import { FiHome, FiClock, FiLogOut, FiMenu, FiChevronLeft, FiChevronRight } from 'react-icons/fi'
 import { RiUserLine } from 'react-icons/ri'
 import NextLink from 'next/link'
 import { useAuth } from '../context/auth'
@@ -214,6 +214,9 @@ const NavItems: React.FC<NavItemsProps> = ({ textColor, isCollapsed }) => {
     <>
       <NavItem icon={FiHome} href="/home" textColor={textColor} isCollapsed={isCollapsed}>
         Home
+      </NavItem>
+      <NavItem icon={FiClock} href="/history" textColor={textColor} isCollapsed={isCollapsed}>
+        History
       </NavItem>
       <NavItem
         icon={FiLogOut}
