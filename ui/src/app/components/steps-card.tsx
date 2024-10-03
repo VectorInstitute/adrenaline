@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Text, VStack, useColorModeValue, Skeleton, Flex } from '@chakra-ui/react';
+import { Box, Text, VStack, useColorModeValue } from '@chakra-ui/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CheckIcon } from '@chakra-ui/icons';
 
@@ -10,10 +10,9 @@ interface Step {
 
 interface StepsCardProps {
   steps: Step[];
-  isGeneratingAnswer: boolean;
 }
 
-const StepsCard: React.FC<StepsCardProps> = ({ steps, isGeneratingAnswer }) => {
+const StepsCard: React.FC<StepsCardProps> = ({ steps }) => {
   const bgColor = useColorModeValue('white', 'gray.700');
   const borderColor = useColorModeValue('blue.100', 'blue.700');
   const headerBgColor = useColorModeValue('blue.50', 'blue.900');
@@ -40,19 +39,16 @@ const StepsCard: React.FC<StepsCardProps> = ({ steps, isGeneratingAnswer }) => {
               exit={{ opacity: 0, y: -20 }}
               transition={{ duration: 0.5, delay: index * 0.1 }}
             >
-              <Flex alignItems="center">
+              <Box display="flex" alignItems="center">
                 <Box color="green.500" mr={2}>
                   <CheckIcon />
                 </Box>
                 <Text fontWeight="bold" color="blue.500" fontFamily="'Roboto Slab', serif">Step {index + 1}: {stepObj.step}</Text>
-              </Flex>
+              </Box>
               <Text mt={1} fontFamily="'Roboto Slab', serif">{stepObj.reasoning}</Text>
             </motion.div>
           ))}
         </AnimatePresence>
-        {isGeneratingAnswer && (
-          <Skeleton height="60px" />
-        )}
       </VStack>
     </Box>
   );
