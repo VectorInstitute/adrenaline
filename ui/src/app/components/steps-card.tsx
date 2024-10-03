@@ -28,7 +28,7 @@ const StepsCard: React.FC<StepsCardProps> = ({ steps, isGeneratingAnswer }) => {
       shadow="lg"
     >
       <Box bg={headerBgColor} p={4}>
-        <Text fontWeight="bold" fontSize="lg">Reasoning Steps</Text>
+        <Text fontWeight="bold" fontSize="lg" fontFamily="'Roboto Slab', serif">Reasoning Steps</Text>
       </Box>
       <VStack align="stretch" spacing={4} p={4}>
         <AnimatePresence>
@@ -44,9 +44,9 @@ const StepsCard: React.FC<StepsCardProps> = ({ steps, isGeneratingAnswer }) => {
                 <Box color="green.500" mr={2}>
                   <CheckIcon />
                 </Box>
-                <Text fontWeight="bold" color="blue.500">Step {index + 1}: {stepObj.step}</Text>
+                <Text fontWeight="bold" color="blue.500" fontFamily="'Roboto Slab', serif">Step {index + 1}: {stepObj.step}</Text>
               </Flex>
-              <Text mt={1}>{stepObj.reasoning}</Text>
+              <Text mt={1} fontFamily="'Roboto Slab', serif">{stepObj.reasoning}</Text>
             </motion.div>
           ))}
         </AnimatePresence>

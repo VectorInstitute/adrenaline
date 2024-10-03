@@ -4,7 +4,7 @@ import logging
 from datetime import UTC, datetime
 from typing import List
 
-from bson import InvalidId, ObjectId
+from bson import ObjectId
 from fastapi import APIRouter, Body, Depends, HTTPException
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pydantic import BaseModel
@@ -99,7 +99,7 @@ async def get_page(
     """Retrieve a specific page."""
     try:
         _ = ObjectId(page_id)
-    except InvalidId as e:
+    except ValueError as e:
         raise HTTPException(status_code=400, detail="Invalid page ID") from e
     page = await db.pages.find_one({"id": page_id, "user_id": str(current_user.id)})
     if not page:

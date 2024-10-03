@@ -4,14 +4,16 @@ import React, { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import {
   Box, Flex, VStack, useColorModeValue, Container, Card, CardBody,
-  useToast, Skeleton, Text, Heading, Button
+  useToast, Skeleton, Text, Heading, HStack, Tooltip
 } from '@chakra-ui/react'
 import { motion, MotionProps } from 'framer-motion'
+import { FiClock } from 'react-icons/fi'
 import Sidebar from '../../components/sidebar'
 import { withAuth } from '../../components/with-auth'
 import SearchBox from '../../components/search-box'
 import AnswerCard from '../../components/answer-card'
 import StepsCard from '../../components/steps-card'
+import { formatDistanceToNow } from 'date-fns'
 
 const MotionBox = motion<Omit<React.ComponentProps<typeof Box> & MotionProps, "transition">>(Box)
 
@@ -56,9 +58,15 @@ const AnswerPage: React.FC = () => {
         const token = localStorage.getItem('token')
         if (!token) throw new Error('No token found')
 
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 60000) // 60 seconds timeout
+
         const response = await fetch(`/api/pages/${id}`, {
           headers: { 'Authorization': `Bearer ${token}` },
+          signal: controller.signal
         })
+
+        clearTimeout(timeoutId)
 
         if (!response.ok) {
           console.error('Response status:', response.status)
@@ -99,6 +107,9 @@ const AnswerPage: React.FC = () => {
       const token = localStorage.getItem('token')
       if (!token) throw new Error('No token found')
 
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 120000) // 120 seconds timeout
+
       const stepsResponse = await fetch('/api/generate_cot_steps', {
         method: 'POST',
         headers: {
@@ -106,7 +117,10 @@ const AnswerPage: React.FC = () => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ query, patient_id: patientId }),
+        signal: controller.signal
       })
+
+      clearTimeout(timeoutId)
 
       if (!stepsResponse.ok) {
         throw new Error('Failed to generate steps')
@@ -148,6 +162,9 @@ const AnswerPage: React.FC = () => {
       const token = localStorage.getItem('token')
       if (!token) throw new Error('No token found')
 
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 120000) // 120 seconds timeout
+
       const answerResponse = await fetch('/api/generate_cot_answer', {
         method: 'POST',
         headers: {
@@ -159,7 +176,10 @@ const AnswerPage: React.FC = () => {
           patient_id: patientId,
           steps
         }),
+        signal: controller.signal
       })
+
+      clearTimeout(timeoutId)
 
       if (!answerResponse.ok) {
         throw new Error('Failed to generate answer')
@@ -208,6 +228,9 @@ const AnswerPage: React.FC = () => {
       const token = localStorage.getItem('token')
       if (!token) throw new Error('No token found')
 
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 60000) // 60 seconds timeout
+
       // Create a new page
       const createPageResponse = await fetch('/api/pages/create', {
         method: 'POST',
@@ -216,7 +239,10 @@ const AnswerPage: React.FC = () => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ query }),
+        signal: controller.signal
       })
+
+      clearTimeout(timeoutId)
 
       if (!createPageResponse.ok) {
         throw new Error('Failed to create new page')
@@ -257,14 +283,14 @@ const AnswerPage: React.FC = () => {
               ) : firstQueryAnswer ? (
                 <Card bg={cardBgColor} shadow="md">
                   <CardBody>
-                    <Heading as="h2" size="lg" mb={4}>Original Query</Heading>
-                    <Text>{firstQueryAnswer.query.query}</Text>
+                    <Heading as="h2" size="lg" mb={4} fontFamily="'Roboto Slab', serif">Query</Heading>
+                    <Text fontFamily="'Roboto Slab', serif" fontSize="lg">{firstQueryAnswer.query.query}</Text>
                   </CardBody>
                 </Card>
               ) : (
                 <Card bg={cardBgColor} shadow="md">
                   <CardBody>
-                    <Text>No page data found</Text>
+                    <Text fontFamily="'Roboto Slab', serif">No page data found</Text>
                   </CardBody>
                 </Card>
               )}

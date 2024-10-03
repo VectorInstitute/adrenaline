@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback, useMemo } from 'react'
 import { useParams } from 'next/navigation'
 import {
   Box, Flex, VStack, useColorModeValue, Container, Card, CardBody,
@@ -18,53 +18,68 @@ import StepsCard from '../../components/steps-card'
 
 const MotionBox = motion(Box)
 
+interface Step {
+  step: string
+  reasoning: string
+}
+
+interface SearchState {
+  isSearching: boolean
+  steps: Step[]
+  answer: string | null
+  reasoning: string | null
+  isGeneratingAnswer: boolean
+}
+
 const PatientPage: React.FC = () => {
   const [patientData, setPatientData] = useState<PatientData | null>(null)
   const [isLoading, setIsLoading] = useState<boolean>(true)
-  const [isSearching, setIsSearching] = useState<boolean>(false)
-  const [steps, setSteps] = useState<Array<{ step: string; reasoning: string }>>([])
-  const [answer, setAnswer] = useState<string | null>(null)
-  const [reasoning, setReasoning] = useState<string | null>(null)
-  const [isGeneratingAnswer, setIsGeneratingAnswer] = useState<boolean>(false)
-  const { id } = useParams()
+  const [searchState, setSearchState] = useState<SearchState>({
+    isSearching: false,
+    steps: [],
+    answer: null,
+    reasoning: null,
+    isGeneratingAnswer: false,
+  })
+  const { id } = useParams<{ id: string }>()
   const toast = useToast()
 
   const bgColor = useColorModeValue('gray.50', 'gray.900')
   const cardBgColor = useColorModeValue('white', 'gray.800')
 
-  useEffect(() => {
-    const fetchPatientData = async () => {
-      setIsLoading(true)
-      try {
-        const token = localStorage.getItem('token')
-        if (!token) throw new Error('No token found')
+  const fetchPatientData = useCallback(async () => {
+    setIsLoading(true)
+    try {
+      const token = localStorage.getItem('token')
+      if (!token) throw new Error('No token found')
 
-        const response = await fetch(`/api/patient_data/${id}`, {
-          headers: { 'Authorization': `Bearer ${token}` },
-        })
+      const response = await fetch(`/api/patient_data/${id}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      })
 
-        if (!response.ok) {
-          throw new Error('Failed to fetch patient data')
-        }
-
-        const data: PatientData = await response.json()
-        setPatientData(data)
-      } catch (error) {
-        console.error('Error loading patient data:', error)
-        toast({
-          title: "Error",
-          description: error instanceof Error ? error.message : "An error occurred while loading patient data",
-          status: "error",
-          duration: 3000,
-          isClosable: true,
-        })
-      } finally {
-        setIsLoading(false)
+      if (!response.ok) {
+        throw new Error('Failed to fetch patient data')
       }
-    }
 
-    fetchPatientData()
+      const data: PatientData = await response.json()
+      setPatientData(data)
+    } catch (error) {
+      console.error('Error loading patient data:', error)
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "An error occurred while loading patient data",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+      })
+    } finally {
+      setIsLoading(false)
+    }
   }, [id, toast])
+
+  useEffect(() => {
+    fetchPatientData()
+  }, [fetchPatientData])
 
   const handleSearch = useCallback(async (query: string) => {
     if (!query.trim()) {
@@ -78,11 +93,7 @@ const PatientPage: React.FC = () => {
       return
     }
 
-    setIsSearching(true)
-    setSteps([])
-    setAnswer(null)
-    setReasoning(null)
-    setIsGeneratingAnswer(false)
+    setSearchState(prev => ({ ...prev, isSearching: true, steps: [], answer: null, reasoning: null, isGeneratingAnswer: false }))
 
     try {
       const token = localStorage.getItem('token')
@@ -116,12 +127,15 @@ const PatientPage: React.FC = () => {
             const data = JSON.parse(line.slice(6))
             switch (data.type) {
               case 'step':
-                setSteps(prevSteps => [...prevSteps, data.content])
+                setSearchState(prev => ({ ...prev, steps: [...prev.steps, data.content] }))
                 break
               case 'answer':
-                setIsGeneratingAnswer(true)
-                setAnswer(data.content.answer)
-                setReasoning(data.content.reasoning)
+                setSearchState(prev => ({
+                  ...prev,
+                  isGeneratingAnswer: true,
+                  answer: data.content.answer,
+                  reasoning: data.content.reasoning
+                }))
                 break
               case 'error':
                 throw new Error(data.content)
@@ -129,7 +143,6 @@ const PatientPage: React.FC = () => {
           }
         }
       }
-
     } catch (error) {
       console.error('Error:', error)
       toast({
@@ -140,10 +153,33 @@ const PatientPage: React.FC = () => {
         isClosable: true,
       })
     } finally {
-      setIsSearching(false)
-      setIsGeneratingAnswer(false)
+      setSearchState(prev => ({ ...prev, isSearching: false, isGeneratingAnswer: false }))
     }
   }, [id, toast])
+
+  const { isSearching, steps, answer, reasoning, isGeneratingAnswer } = searchState
+
+  const renderPatientSummary = useMemo(() => (
+    isLoading ? (
+      <Skeleton height="200px" />
+    ) : patientData ? (
+      <PatientSummaryCard patientData={patientData} />
+    ) : (
+      <Card bg={cardBgColor} shadow="md">
+        <CardBody>
+          <Text>No patient data found</Text>
+        </CardBody>
+      </Card>
+    )
+  ), [isLoading, patientData, cardBgColor])
+
+  const renderPatientDetails = useMemo(() => (
+    isLoading ? (
+      <Skeleton height="500px" />
+    ) : patientData ? (
+      <PatientDetailsCard patientData={patientData} patientId={id} />
+    ) : null
+  ), [isLoading, patientData, id])
 
   return (
     <Flex minHeight="100vh" bg={bgColor}>
@@ -160,21 +196,9 @@ const PatientPage: React.FC = () => {
                     exit={{ opacity: 0, y: -20 }}
                     transition={{ duration: 0.5 }}
                   >
-                    {isLoading ? (
-                      <Skeleton height="200px" />
-                    ) : patientData ? (
-                      <PatientSummaryCard patientData={patientData} />
-                    ) : (
-                      <Card bg={cardBgColor} shadow="md">
-                        <CardBody>
-                          <Text>No patient data found</Text>
-                        </CardBody>
-                      </Card>
-                    )}
+                    {renderPatientSummary}
                   </MotionBox>
-                  <Box>
-                    <SearchBox onSearch={handleSearch} isLoading={isSearching} isPatientPage={true} />
-                  </Box>
+                  <SearchBox onSearch={handleSearch} isLoading={isSearching} isPatientPage={true} />
                   <AnimatePresence>
                     {steps.length > 0 && (
                       <MotionBox
@@ -208,11 +232,7 @@ const PatientPage: React.FC = () => {
                   exit={{ opacity: 0, y: -20 }}
                   transition={{ duration: 0.5, delay: 0.2 }}
                 >
-                  {isLoading ? (
-                    <Skeleton height="500px" />
-                  ) : patientData ? (
-                    <PatientDetailsCard patientData={patientData} patientId={id as string} />
-                  ) : null}
+                  {renderPatientDetails}
                 </MotionBox>
               </GridItem>
             </Grid>

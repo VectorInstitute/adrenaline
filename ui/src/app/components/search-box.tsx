@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
-import { Flex, Button, Text, Switch, useColorModeValue } from '@chakra-ui/react';
+import { Flex, Button, Text, Switch, useColorModeValue, Box } from '@chakra-ui/react';
 import { ArrowUpIcon } from '@chakra-ui/icons';
 
 interface SearchBoxProps {
@@ -36,18 +36,17 @@ const SearchBox: React.FC<SearchBoxProps> = ({ onSearch, isLoading, isPatientPag
 
   const bgColor = useColorModeValue('white', 'gray.800');
   const buttonBgColor = useColorModeValue('#1f5280', '#3a7ab3');
-  const patientTextColor = isPatientMode ? buttonBgColor : 'black';
+  const patientTextColor = isPatientMode ? buttonBgColor : 'inherit';
 
   return (
-    <Flex direction="column" align="center" w="100%" maxW="600px" my={4}>
+    <Box w="100%" maxW="600px" my={4}>
       <Flex
-        w="100%"
-        position="relative"
-        align="center"
+        direction="column"
         border="2px solid"
         borderColor="gray.200"
         borderRadius="md"
         overflow="hidden"
+        position="relative"
       >
         <TextareaAutosize
           value={query}
@@ -61,28 +60,36 @@ const SearchBox: React.FC<SearchBoxProps> = ({ onSearch, isLoading, isPatientPag
             resize: 'none',
             border: 'none',
             outline: 'none',
-            padding: '12px 100px 12px 16px',
+            padding: '12px 16px',
+            paddingRight: '100px',
             backgroundColor: bgColor,
             color: 'inherit',
             fontSize: '16px',
             lineHeight: '1.5',
+            fontFamily: "'Roboto Slab', serif",
             maxRows: '300px',
             overflowY: 'auto',
           }}
         />
-        <Flex position="absolute" right={2} top="75%" transform="translateY(-50%)" align="center">
+        <Flex
+          position="absolute"
+          right={2}
+          bottom={2}
+          align="center"
+          flexDirection={{ base: 'column', sm: 'row' }}
+        >
           {!isPatientPage && (
-            <>
+            <Flex align="center" mb={{ base: 2, sm: 0 }} mr={{ base: 0, sm: 2 }}>
               <Switch
-                size="md"
+                size="sm"
                 isChecked={isPatientMode}
                 onChange={toggleMode}
                 mr={2}
               />
-              <Text fontSize="xs" fontWeight="medium" color={patientTextColor} mr={2}>
+              <Text fontSize="xs" fontWeight="medium" color={patientTextColor}>
                 Patient
               </Text>
-            </>
+            </Flex>
           )}
           <Button
             size="sm"
@@ -97,7 +104,7 @@ const SearchBox: React.FC<SearchBoxProps> = ({ onSearch, isLoading, isPatientPag
           </Button>
         </Flex>
       </Flex>
-    </Flex>
+    </Box>
   );
 };
 

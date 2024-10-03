@@ -86,11 +86,10 @@ def read_mrconso(
                     "synonyms": set(),
                     "definitions": [],
                     "semantic_types": set(),
-                    "relationships": [],
                 }
 
             if lat == "ENG" and ts == "P" and sab in ENGLISH_SOURCES:
-                if tty == "PF" and not concepts[cui]["preferred_term"]:
+                if ispref == "Y" and not concepts[cui]["preferred_term"]:
                     concepts[cui]["preferred_term"] = str_
                 concepts[cui]["synonyms"].add(str_)
 
@@ -147,54 +146,6 @@ def read_mrsty(
             progress.update(task, advance=1)
 
 
-def read_mrrel(
-    file_path: str,
-    concepts: Dict[str, Dict[str, Any]],
-    progress: Progress,
-    task: TaskID,
-) -> None:
-    total_lines = sum(1 for _ in open(file_path, "r", encoding="utf-8"))
-    progress.update(task, total=total_lines)
-
-    with open(file_path, "r", encoding="utf-8") as file:
-        for line in file:
-            parts = line.strip().split("|")
-            if len(parts) < 16:
-                logger.warning(f"Skipping line with insufficient fields: {len(parts)}")
-                continue
-
-            (
-                cui1,
-                aui1,
-                stype1,
-                rel,
-                cui2,
-                aui2,
-                stype2,
-                rela,
-                rui,
-                srui,
-                sab,
-                sl,
-                rg,
-                dir,
-                suppress,
-                cvf,
-            ) = parts[:16]
-
-            if cui1 in concepts and suppress != "Y":
-                concepts[cui1]["relationships"].append(
-                    {
-                        "related_cui": cui2,
-                        "relationship_type": rel,
-                        "relationship_attribute": rela,
-                        "source": sab,
-                    }
-                )
-
-            progress.update(task, advance=1)
-
-
 def process_concepts(concepts: Dict[str, Dict[str, Any]]) -> None:
     for concept in concepts.values():
         concept["synonyms"] = list(concept["synonyms"])
@@ -226,6 +177,7 @@ async def process_umls_data(
     operations = []
     total_concepts = len(concepts)
     progress.update(task, total=total_concepts)
+    completed = 0
 
     for i, (cui, concept) in enumerate(concepts.items(), 1):
         operation = UpdateOne({"cui": cui}, {"$set": concept}, upsert=True)
@@ -234,7 +186,10 @@ async def process_umls_data(
         if len(operations) >= BATCH_SIZE or i == total_concepts:
             await db_manager.bulk_upsert_concepts(operations)
             operations = []
-            progress.update(task, advance=BATCH_SIZE)
+            progress.update(task, advance=len(operations))
+            completed += len(operations)
+
+    progress.update(task, completed=total_concepts)
 
 
 async def main() -> None:
@@ -264,16 +219,10 @@ async def main() -> None:
             )
             progress.remove_task(mrsty_task)
 
-            mrrel_task = progress.add_task("[blue]Reading MRREL.RRF...", total=None)
-            read_mrrel(
-                os.path.join(DATA_PATH, "MRREL.RRF"), concepts, progress, mrrel_task
-            )
-            progress.remove_task(mrrel_task)
-
             process_concepts(concepts)
 
             upload_task = progress.add_task(
-                "[green]Processing and uploading UMLS data...", total=None
+                "[green]Processing and uploading UMLS data...", total=len(concepts)
             )
             await process_umls_data(db_manager, concepts, progress, upload_task)
             progress.remove_task(upload_task)
