@@ -9,6 +9,10 @@ import Sidebar from '../components/sidebar'
 import { withAuth } from '../components/with-auth'
 import SearchBox from '../components/search-box'
 
+interface CreatePageResponse {
+  page_id: string;
+}
+
 const HomePage: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(false)
   const router = useRouter()
@@ -43,14 +47,13 @@ const HomePage: React.FC = () => {
         }
         router.push(`/patient/${patientId}`)
       } else {
-        // Create a new page
         const createPageResponse = await fetch('/api/pages/create', {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ query: query }),
+          body: JSON.stringify({ query }),
         })
 
         if (!createPageResponse.ok) {
@@ -58,11 +61,10 @@ const HomePage: React.FC = () => {
           throw new Error(`Failed to create new page: ${JSON.stringify(errorData)}`);
         }
 
-        const { page_id } = await createPageResponse.json()
+        const { page_id }: CreatePageResponse = await createPageResponse.json()
 
         if (page_id) {
-          // Redirect to the new page
-          router.push(`/answer/${page_id}`)
+          router.push(`/answer/${page_id}?new=true`)
         } else {
           throw new Error('Failed to get page ID')
         }
