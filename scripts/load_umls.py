@@ -28,7 +28,6 @@ console = Console()
 
 DATA_PATH = "/mnt/data/clinical_datasets/umls/2024AA/META"
 BATCH_SIZE = 1000
-ENGLISH_SOURCES = {"NCI", "MSH", "HPO"}  # English sources
 
 
 class UMLSDatabaseManager:
@@ -75,23 +74,47 @@ def read_mrconso(
                 )
                 continue
 
-            cui, lat, ts, _, _, _, ispref, _, _, _, _, sab, tty, _, str_, _, _, _, _ = (
-                parts
-            )
+            (
+                cui,
+                lat,
+                ts,
+                lui,
+                stt,
+                sui,
+                ispref,
+                aui,
+                saui,
+                scui,
+                sdui,
+                sab,
+                tty,
+                code,
+                str_,
+                srl,
+                suppress,
+                cvf,
+                _,
+            ) = parts
 
-            if cui not in concepts:
-                concepts[cui] = {
-                    "cui": cui,
-                    "preferred_term": "",
-                    "synonyms": set(),
-                    "definitions": [],
-                    "semantic_types": set(),
-                }
+            if lat == "ENG":
+                if cui not in concepts:
+                    concepts[cui] = {
+                        "cui": cui,
+                        "preferred_term": "",
+                        "synonyms": set(),
+                        "definitions": [],
+                        "semantic_types": set(),
+                    }
 
-            if lat == "ENG" and ts == "P" and sab in ENGLISH_SOURCES:
-                if ispref == "Y" and not concepts[cui]["preferred_term"]:
+                if ts == "P":
                     concepts[cui]["preferred_term"] = str_
                 concepts[cui]["synonyms"].add(str_)
+
+                # Add descriptive terms as potential definitions
+                if ts == "D":
+                    concepts[cui]["definitions"].append(
+                        {"definition": str_, "source": f"{sab}_DESC"}
+                    )
 
             progress.update(task, advance=1)
 
@@ -114,10 +137,50 @@ def read_mrdef(
                 logger.warning(f"Skipping line with insufficient fields: {len(parts)}")
                 continue
 
-            cui, _, _, _, sab, def_, suppress = parts[:7]
+            cui, aui, atui, satui, sab, def_, suppress = parts[:7]
 
-            if cui in concepts and suppress != "Y" and sab in ENGLISH_SOURCES:
+            if cui in concepts and suppress != "Y":
                 concepts[cui]["definitions"].append({"definition": def_, "source": sab})
+
+            progress.update(task, advance=1)
+
+
+def read_mrsat(
+    file_path: str,
+    concepts: Dict[str, Dict[str, Any]],
+    progress: Progress,
+    task: TaskID,
+) -> None:
+    total_lines = sum(1 for _ in open(file_path, "r", encoding="utf-8"))
+    progress.update(task, total=total_lines)
+
+    with open(file_path, "r", encoding="utf-8") as file:
+        for line in file:
+            parts = line.strip().split("|")
+            if len(parts) < 13:
+                logger.warning(f"Skipping line with insufficient fields: {len(parts)}")
+                continue
+
+            (
+                cui,
+                lui,
+                sui,
+                metaui,
+                stype,
+                code,
+                atui,
+                satui,
+                atn,
+                sab,
+                atv,
+                suppress,
+                cvf,
+            ) = parts[:13]
+
+            if cui in concepts and suppress != "Y" and atn in ["DEFINITION", "DEF"]:
+                concepts[cui]["definitions"].append(
+                    {"definition": atv, "source": f"{sab}_{atn}"}
+                )
 
             progress.update(task, advance=1)
 
@@ -151,12 +214,23 @@ def process_concepts(concepts: Dict[str, Dict[str, Any]]) -> None:
         concept["synonyms"] = list(concept["synonyms"])
         concept["semantic_types"] = list(concept["semantic_types"])
 
+        # If no definitions, create a basic one
+        if not concept["definitions"]:
+            basic_def = f"A concept related to {concept['preferred_term']}."
+            if concept["semantic_types"]:
+                basic_def += (
+                    f" It is classified as: {', '.join(concept['semantic_types'])}."
+                )
+            concept["definitions"].append(
+                {"definition": basic_def, "source": "GENERATED"}
+            )
+
         # Sort definitions by source preference
         concept["definitions"].sort(
-            key=lambda x: x["source"] in ENGLISH_SOURCES, reverse=True
+            key=lambda x: x["source"] in ["NCI", "MSH", "HPO"], reverse=True
         )
 
-        # Create a structured combined text field without codes and relationships
+        # Create a structured combined text field
         combined_text = f"PREFERRED TERM: {concept['preferred_term']}\n"
         combined_text += "DEFINITIONS:\n"
         for def_ in concept["definitions"]:
@@ -213,7 +287,13 @@ async def main() -> None:
             )
             progress.remove_task(mrdef_task)
 
-            mrsty_task = progress.add_task("[yellow]Reading MRSTY.RRF...", total=None)
+            mrsat_task = progress.add_task("[yellow]Reading MRSAT.RRF...", total=None)
+            read_mrsat(
+                os.path.join(DATA_PATH, "MRSAT.RRF"), concepts, progress, mrsat_task
+            )
+            progress.remove_task(mrsat_task)
+
+            mrsty_task = progress.add_task("[green]Reading MRSTY.RRF...", total=None)
             read_mrsty(
                 os.path.join(DATA_PATH, "MRSTY.RRF"), concepts, progress, mrsty_task
             )
@@ -222,7 +302,7 @@ async def main() -> None:
             process_concepts(concepts)
 
             upload_task = progress.add_task(
-                "[green]Processing and uploading UMLS data...", total=len(concepts)
+                "[blue]Processing and uploading UMLS data...", total=len(concepts)
             )
             await process_umls_data(db_manager, concepts, progress, upload_task)
             progress.remove_task(upload_task)
