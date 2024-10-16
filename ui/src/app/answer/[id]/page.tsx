@@ -94,11 +94,11 @@ const AnswerPage: React.FC = () => {
   }, [id, toast])
 
 
-  const generateSteps = useCallback(async (query: string, patientId?: number): Promise<Step[] | null> => {
-    setIsGeneratingSteps(true)
+  const generateSteps = useCallback(async (query: string, pageId: string, patientId?: number): Promise<Step[] | null> => {
+    setIsGeneratingSteps(true);
     try {
-      const token = localStorage.getItem('token')
-      if (!token) throw new Error('No token found')
+      const token = localStorage.getItem('token');
+      if (!token) throw new Error('No token found');
 
       const stepsResponse = await fetch('/api/generate_cot_steps', {
         method: 'POST',
@@ -106,36 +106,36 @@ const AnswerPage: React.FC = () => {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ query, patient_id: patientId }),
-      })
+        body: JSON.stringify({ query, page_id: pageId, patient_id: patientId }),
+      });
 
       if (!stepsResponse.ok) {
-        const errorData = await stepsResponse.json()
-        throw new Error(`Failed to generate steps: ${errorData.message}`)
+        const errorData = await stepsResponse.json();
+        throw new Error(`Failed to generate steps: ${errorData.message}`);
       }
 
-      const stepsData = await stepsResponse.json()
-      return stepsData.cot_steps
+      const stepsData = await stepsResponse.json();
+      return stepsData.cot_steps;
     } catch (error) {
-      console.error('Error generating steps:', error)
+      console.error('Error generating steps:', error);
       toast({
         title: "Error",
         description: error instanceof Error ? error.message : "An error occurred while generating steps",
         status: "error",
         duration: 3000,
         isClosable: true,
-      })
-      return null
+      });
+      return null;
     } finally {
-      setIsGeneratingSteps(false)
+      setIsGeneratingSteps(false);
     }
-  }, [toast])
+  }, [toast]);
 
-  const generateAnswer = useCallback(async (query: string, patientId?: number, steps?: Step[]): Promise<Answer | null> => {
-    setIsGeneratingAnswer(true)
+  const generateAnswer = useCallback(async (query: string, pageId: string, patientId?: number, steps?: Step[]): Promise<Answer | null> => {
+    setIsGeneratingAnswer(true);
     try {
-      const token = localStorage.getItem('token')
-      if (!token) throw new Error('No token found')
+      const token = localStorage.getItem('token');
+      if (!token) throw new Error('No token found');
 
       const answerResponse = await fetch('/api/generate_cot_answer', {
         method: 'POST',
@@ -145,61 +145,62 @@ const AnswerPage: React.FC = () => {
         },
         body: JSON.stringify({
           query,
+          page_id: pageId,
           patient_id: patientId,
           steps
         }),
-      })
+      });
 
       if (!answerResponse.ok) {
-        const errorData = await answerResponse.json()
-        throw new Error(`Failed to generate answer: ${errorData.message}`)
+        const errorData = await answerResponse.json();
+        throw new Error(`Failed to generate answer: ${errorData.message}`);
       }
 
-      const answerData = await answerResponse.json()
-      return answerData
+      const answerData = await answerResponse.json();
+      return answerData;
     } catch (error) {
-      console.error('Error generating answer:', error)
+      console.error('Error generating answer:', error);
       toast({
         title: "Error",
         description: error instanceof Error ? error.message : "An error occurred while generating the answer",
         status: "error",
         duration: 3000,
         isClosable: true,
-      })
-      return null
+      });
+      return null;
     } finally {
-      setIsGeneratingAnswer(false)
+      setIsGeneratingAnswer(false);
     }
-  }, [toast])
+  }, [toast]);
 
   const [hasGeneratedAnswer, setHasGeneratedAnswer] = useState<boolean>(false)
 
   useEffect(() => {
     const initializePage = async () => {
-      const data = await fetchPageData()
+      const data = await fetchPageData();
       if (data && isNewQuery) {
-        const firstQueryAnswer = data.query_answers[0]
+        const firstQueryAnswer = data.query_answers[0];
         if (firstQueryAnswer && !firstQueryAnswer.query.steps) {
-          const steps = await generateSteps(firstQueryAnswer.query.query, firstQueryAnswer.query.patient_id)
+          const steps = await generateSteps(firstQueryAnswer.query.query, id, firstQueryAnswer.query.patient_id);
           if (steps) {
-            const answer = await generateAnswer(firstQueryAnswer.query.query, firstQueryAnswer.query.patient_id, steps)
+            const answer = await generateAnswer(firstQueryAnswer.query.query, id, firstQueryAnswer.query.patient_id, steps);
             if (answer) {
               setPageData(prevData => {
-                if (!prevData) return data
+                if (!prevData) return data;
                 const updatedQueryAnswers = [
                   { ...firstQueryAnswer, query: { ...firstQueryAnswer.query, steps }, answer },
                   ...prevData.query_answers.slice(1)
-                ]
-                return { ...prevData, query_answers: updatedQueryAnswers }
-              })
+                ];
+                return { ...prevData, query_answers: updatedQueryAnswers };
+              });
             }
           }
         }
       }
-    }
+    };
 
-    initializePage()
-  }, [fetchPageData, generateSteps, generateAnswer, isNewQuery])
+    initializePage();
+  }, [fetchPageData, generateSteps, generateAnswer, isNewQuery, id]);
 
   const handleSearch = async (query: string) => {
     if (!query.trim()) {
@@ -209,13 +210,13 @@ const AnswerPage: React.FC = () => {
         status: "error",
         duration: 3000,
         isClosable: true,
-      })
-      return
+      });
+      return;
     }
 
     try {
-      const token = localStorage.getItem('token')
-      if (!token) throw new Error('No token found')
+      const token = localStorage.getItem('token');
+      if (!token) throw new Error('No token found');
 
       // Append the new query to the existing page
       const appendResponse = await fetch(`/api/pages/${id}/append`, {
@@ -225,28 +226,28 @@ const AnswerPage: React.FC = () => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ question: query }),
-      })
+      });
 
       if (!appendResponse.ok) {
-        const errorData = await appendResponse.json()
-        throw new Error(`Failed to append to page: ${errorData.message}`)
+        const errorData = await appendResponse.json();
+        throw new Error(`Failed to append to page: ${errorData.message}`);
       }
 
       // Generate steps for the new query
-      setIsGeneratingSteps(true)
-      const steps = await generateSteps(query)
-      setIsGeneratingSteps(false)
+      setIsGeneratingSteps(true);
+      const steps = await generateSteps(query, id);
+      setIsGeneratingSteps(false);
 
       if (steps) {
         // Generate answer using the steps
-        setIsGeneratingAnswer(true)
-        const answer = await generateAnswer(query, undefined, steps)
-        setIsGeneratingAnswer(false)
+        setIsGeneratingAnswer(true);
+        const answer = await generateAnswer(query, id, undefined, steps);
+        setIsGeneratingAnswer(false);
 
         if (answer) {
           // Update the page data with the new query, steps, and answer
           setPageData(prevData => {
-            if (!prevData) return null
+            if (!prevData) return null;
             const updatedQueryAnswers = [
               ...prevData.query_answers,
               {
@@ -254,22 +255,22 @@ const AnswerPage: React.FC = () => {
                 answer,
                 is_first: false
               }
-            ]
-            return { ...prevData, query_answers: updatedQueryAnswers }
-          })
+            ];
+            return { ...prevData, query_answers: updatedQueryAnswers };
+          });
         }
       }
     } catch (error) {
-      console.error('Error:', error)
+      console.error('Error:', error);
       toast({
         title: "Error",
         description: error instanceof Error ? error.message : "An error occurred",
         status: "error",
         duration: 3000,
         isClosable: true,
-      })
+      });
     }
-  }
+  };
 
   const firstQueryAnswer = pageData?.query_answers[0]
 

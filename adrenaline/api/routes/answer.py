@@ -2,11 +2,12 @@
 
 import logging
 import os
+from typing import Dict, List
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-from api.pages.data import Query
+from api.pages.data import CoTStep, Query
 from api.patients.cot import generate_cot_answer, generate_cot_steps
 from api.patients.db import get_database
 from api.patients.rag import EmbeddingManager, MilvusManager, retrieve_relevant_notes
@@ -49,7 +50,7 @@ async def generate_cot_steps_endpoint(
     query: Query = Body(...),  # noqa: B008
     db: AsyncIOMotorDatabase = Depends(get_database),  # noqa: B008
     current_user: User = Depends(get_current_active_user),  # noqa: B008
-):
+) -> Dict[str, List[CoTStep]]:
     """Generate COT steps.
 
     Parameters
@@ -63,7 +64,7 @@ async def generate_cot_steps_endpoint(
 
     Returns
     -------
-    List[Step]
+    Dict[str, List[CoTStep]]
         The generated steps.
     """
     try:
@@ -87,20 +88,22 @@ async def generate_cot_steps_endpoint(
             context=context,
         )
 
-        # Update the page with the generated steps
-        page = await db.pages.find_one({"query_answers.query.query": query.query})
-        if page:
-            await db.pages.update_one(
-                {"_id": page["_id"]},
-                {
-                    "$set": {
-                        "query_answers.$[elem].query.steps": [
-                            step.dict() for step in steps
-                        ]
-                    }
-                },
-                array_filters=[{"elem.query.query": query.query}],
-            )
+        # Update the page with the generated steps using the page_id
+        page = await db.pages.find_one(
+            {"id": query.page_id, "user_id": str(current_user.id)}
+        )
+        if not page:
+            raise HTTPException(status_code=404, detail="Page not found")
+
+        await db.pages.update_one(
+            {"_id": page["_id"]},
+            {
+                "$set": {
+                    "query_answers.$[elem].query.steps": [step.dict() for step in steps]
+                }
+            },
+            array_filters=[{"elem.query.query": query.query}],
+        )
 
         return {"cot_steps": [step.dict() for step in steps]}
 
@@ -115,7 +118,7 @@ async def generate_cot_answer_endpoint(
     query: Query = Body(...),  # noqa: B008
     db: AsyncIOMotorDatabase = Depends(get_database),  # noqa: B008
     current_user: User = Depends(get_current_active_user),  # noqa: B008
-):
+) -> Dict[str, str]:
     """Generate a COT answer.
 
     Parameters
@@ -159,21 +162,25 @@ async def generate_cot_answer_endpoint(
             context=context,
         )
 
-        # Update the page with the generated answer
-        page = await db.pages.find_one({"query_answers.query.query": query.query})
-        if page:
-            await db.pages.update_one(
-                {"_id": page["_id"]},
-                {
-                    "$set": {
-                        "query_answers.$[elem].answer": {
-                            "answer": answer,
-                            "reasoning": reasoning,
-                        }
+        # Update the page with the generated answer using the page_id
+        page = await db.pages.find_one(
+            {"id": query.page_id, "user_id": str(current_user.id)}
+        )
+        if not page:
+            raise HTTPException(status_code=404, detail="Page not found")
+
+        await db.pages.update_one(
+            {"_id": page["_id"]},
+            {
+                "$set": {
+                    "query_answers.$[elem].answer": {
+                        "answer": answer,
+                        "reasoning": reasoning,
                     }
-                },
-                array_filters=[{"elem.query.query": query.query}],
-            )
+                }
+            },
+            array_filters=[{"elem.query.query": query.query}],
+        )
 
         return {
             "answer": answer,
