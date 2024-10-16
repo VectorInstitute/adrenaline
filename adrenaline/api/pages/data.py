@@ -34,12 +34,17 @@ class Query(BaseModel):
 
     Attributes
     ----------
+    page_id : str
+        The page identifier.
     query : str
         The query.
     patient_id : Optional[int] = None
         The patient identifier.
+    steps : Optional[List[CoTStep]] = None
+        The steps in the chain of thought process.
     """
 
+    page_id: str
     query: str
     patient_id: Optional[int] = None
     steps: Optional[List[CoTStep]] = None
