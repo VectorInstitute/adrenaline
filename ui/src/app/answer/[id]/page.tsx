@@ -1,19 +1,19 @@
 'use client'
 
 import React, { useEffect, useState, useCallback } from 'react'
-import { useParams, useRouter, useSearchParams } from 'next/navigation'
+import { useParams, useSearchParams } from 'next/navigation'
 import {
   Box, Flex, VStack, useColorModeValue, Container, Card, CardBody,
   useToast, Skeleton, Text, Heading, Progress
 } from '@chakra-ui/react'
-import { motion, MotionProps } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import Sidebar from '../../components/sidebar'
 import { withAuth } from '../../components/with-auth'
 import SearchBox from '../../components/search-box'
 import AnswerCard from '../../components/answer-card'
 import StepsCard from '../../components/steps-card'
 
-const MotionBox = motion<Omit<React.ComponentProps<typeof Box> & MotionProps, "transition">>(Box)
+const MotionBox = motion(Box)
 
 interface Step {
   step: string;
@@ -45,16 +45,28 @@ interface PageData {
   updated_at: string;
 }
 
+interface SearchState {
+  isSearching: boolean;
+  steps: Step[];
+  answer: string | null;
+  reasoning: string | null;
+  isGeneratingAnswer: boolean;
+}
+
 const AnswerPage: React.FC = () => {
   const [pageData, setPageData] = useState<PageData | null>(null)
   const [isLoading, setIsLoading] = useState<boolean>(true)
-  const [isGeneratingSteps, setIsGeneratingSteps] = useState<boolean>(false)
-  const [isGeneratingAnswer, setIsGeneratingAnswer] = useState<boolean>(false)
+  const [searchState, setSearchState] = useState<SearchState>({
+    isSearching: false,
+    steps: [],
+    answer: null,
+    reasoning: null,
+    isGeneratingAnswer: false,
+  })
   const params = useParams()
   const searchParams = useSearchParams()
   const id = params?.id as string
   const isNewQuery = searchParams?.get('new') === 'true'
-  const router = useRouter()
   const toast = useToast()
 
   const bgColor = useColorModeValue('gray.50', 'gray.900')
@@ -93,13 +105,12 @@ const AnswerPage: React.FC = () => {
     }
   }, [id, toast])
 
-
-  const generateSteps = useCallback(async (query: string, pageId: string, patientId?: number): Promise<Step[] | null> => {
-    setIsGeneratingSteps(true);
+  const generateStepsAndAnswer = useCallback(async (query: string, pageId: string, patientId?: number): Promise<[Step[], Answer | null]> => {
     try {
-      const token = localStorage.getItem('token');
-      if (!token) throw new Error('No token found');
+      const token = localStorage.getItem('token')
+      if (!token) throw new Error('No token found')
 
+      // Generate COT steps
       const stepsResponse = await fetch('/api/generate_cot_steps', {
         method: 'POST',
         headers: {
@@ -107,84 +118,65 @@ const AnswerPage: React.FC = () => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ query, page_id: pageId, patient_id: patientId }),
-      });
+      })
 
       if (!stepsResponse.ok) {
-        const errorData = await stepsResponse.json();
-        throw new Error(`Failed to generate steps: ${errorData.message}`);
+        throw new Error('Failed to generate COT steps')
       }
 
-      const stepsData = await stepsResponse.json();
-      return stepsData.cot_steps;
+      const { cot_steps } = await stepsResponse.json()
+
+      // Generate answer only if steps are successful
+      if (cot_steps.length > 0) {
+        const answerResponse = await fetch('/api/generate_cot_answer', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ query, page_id: pageId, patient_id: patientId, steps: cot_steps }),
+        })
+
+        if (!answerResponse.ok) {
+          throw new Error('Failed to generate answer')
+        }
+
+        const answerData = await answerResponse.json()
+        return [cot_steps, answerData]
+      } else {
+        return [cot_steps, null]
+      }
     } catch (error) {
-      console.error('Error generating steps:', error);
+      console.error('Error generating steps and answer:', error)
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : "An error occurred while generating steps",
+        description: error instanceof Error ? error.message : "An error occurred while generating steps and answer",
         status: "error",
         duration: 3000,
         isClosable: true,
-      });
-      return null;
-    } finally {
-      setIsGeneratingSteps(false);
+      })
+      return [[], null]
     }
-  }, [toast]);
-
-  const generateAnswer = useCallback(async (query: string, pageId: string, patientId?: number, steps?: Step[]): Promise<Answer | null> => {
-    setIsGeneratingAnswer(true);
-    try {
-      const token = localStorage.getItem('token');
-      if (!token) throw new Error('No token found');
-
-      const answerResponse = await fetch('/api/generate_cot_answer', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          query,
-          page_id: pageId,
-          patient_id: patientId,
-          steps
-        }),
-      });
-
-      if (!answerResponse.ok) {
-        const errorData = await answerResponse.json();
-        throw new Error(`Failed to generate answer: ${errorData.message}`);
-      }
-
-      const answerData = await answerResponse.json();
-      return answerData;
-    } catch (error) {
-      console.error('Error generating answer:', error);
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "An error occurred while generating the answer",
-        status: "error",
-        duration: 3000,
-        isClosable: true,
-      });
-      return null;
-    } finally {
-      setIsGeneratingAnswer(false);
-    }
-  }, [toast]);
-
-  const [hasGeneratedAnswer, setHasGeneratedAnswer] = useState<boolean>(false)
+  }, [toast])
 
   useEffect(() => {
     const initializePage = async () => {
       const data = await fetchPageData();
-      if (data && isNewQuery) {
+      if (data) {
         const firstQueryAnswer = data.query_answers[0];
-        if (firstQueryAnswer && !firstQueryAnswer.query.steps) {
-          const steps = await generateSteps(firstQueryAnswer.query.query, id, firstQueryAnswer.query.patient_id);
-          if (steps) {
-            const answer = await generateAnswer(firstQueryAnswer.query.query, id, firstQueryAnswer.query.patient_id, steps);
-            if (answer) {
+        if (firstQueryAnswer) {
+          if (isNewQuery && !firstQueryAnswer.query.steps) {
+            setSearchState(prev => ({ ...prev, isSearching: true }));
+            const [steps, answer] = await generateStepsAndAnswer(firstQueryAnswer.query.query, id, firstQueryAnswer.query.patient_id);
+            setSearchState(prev => ({
+              ...prev,
+              steps,
+              answer: answer?.answer || null,
+              reasoning: answer?.reasoning || null,
+              isGeneratingAnswer: false,
+              isSearching: false
+            }));
+            if (steps.length > 0 && answer) {
               setPageData(prevData => {
                 if (!prevData) return data;
                 const updatedQueryAnswers = [
@@ -194,15 +186,25 @@ const AnswerPage: React.FC = () => {
                 return { ...prevData, query_answers: updatedQueryAnswers };
               });
             }
+          } else {
+            // Handle existing page data
+            setSearchState(prev => ({
+              ...prev,
+              steps: firstQueryAnswer.query.steps || [],
+              answer: firstQueryAnswer.answer?.answer || null,
+              reasoning: firstQueryAnswer.answer?.reasoning || null,
+              isGeneratingAnswer: false,
+              isSearching: false
+            }));
           }
         }
       }
     };
 
     initializePage();
-  }, [fetchPageData, generateSteps, generateAnswer, isNewQuery, id]);
+  }, [fetchPageData, generateStepsAndAnswer, isNewQuery, id]);
 
-  const handleSearch = async (query: string) => {
+  const handleSearch = useCallback(async (query: string) => {
     if (!query.trim()) {
       toast({
         title: "Error",
@@ -210,69 +212,59 @@ const AnswerPage: React.FC = () => {
         status: "error",
         duration: 3000,
         isClosable: true,
-      });
-      return;
+      })
+      return
     }
 
+    setSearchState({
+      isSearching: true,
+      steps: [],
+      answer: null,
+      reasoning: null,
+      isGeneratingAnswer: false,
+    })
+
     try {
-      const token = localStorage.getItem('token');
-      if (!token) throw new Error('No token found');
+      const [steps, answer] = await generateStepsAndAnswer(query, id)
 
-      // Append the new query to the existing page
-      const appendResponse = await fetch(`/api/pages/${id}/append`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ question: query }),
-      });
+      setSearchState(prev => ({
+        ...prev,
+        steps,
+        answer: answer?.answer || null,
+        reasoning: answer?.reasoning || null,
+        isGeneratingAnswer: false,
+        isSearching: false
+      }))
 
-      if (!appendResponse.ok) {
-        const errorData = await appendResponse.json();
-        throw new Error(`Failed to append to page: ${errorData.message}`);
-      }
-
-      // Generate steps for the new query
-      setIsGeneratingSteps(true);
-      const steps = await generateSteps(query, id);
-      setIsGeneratingSteps(false);
-
-      if (steps) {
-        // Generate answer using the steps
-        setIsGeneratingAnswer(true);
-        const answer = await generateAnswer(query, id, undefined, steps);
-        setIsGeneratingAnswer(false);
-
-        if (answer) {
-          // Update the page data with the new query, steps, and answer
-          setPageData(prevData => {
-            if (!prevData) return null;
-            const updatedQueryAnswers = [
-              ...prevData.query_answers,
-              {
-                query: { query, steps },
-                answer,
-                is_first: false
-              }
-            ];
-            return { ...prevData, query_answers: updatedQueryAnswers };
-          });
-        }
+      if (steps.length > 0 && answer) {
+        // Update the page data with the new query, steps, and answer
+        setPageData(prevData => {
+          if (!prevData) return null
+          const updatedQueryAnswers = [
+            ...prevData.query_answers,
+            {
+              query: { query, steps },
+              answer,
+              is_first: false
+            }
+          ]
+          return { ...prevData, query_answers: updatedQueryAnswers }
+        })
       }
     } catch (error) {
-      console.error('Error:', error);
+      console.error('Error:', error)
       toast({
         title: "Error",
         description: error instanceof Error ? error.message : "An error occurred",
         status: "error",
         duration: 3000,
         isClosable: true,
-      });
+      })
     }
-  };
+  }, [generateStepsAndAnswer, id, toast])
 
   const firstQueryAnswer = pageData?.query_answers[0]
+  const { isSearching, steps, answer, reasoning, isGeneratingAnswer } = searchState
 
   return (
     <Flex minHeight="100vh" bg={bgColor}>
@@ -304,69 +296,68 @@ const AnswerPage: React.FC = () => {
               )}
             </MotionBox>
 
-            {!isLoading && (
-              <>
-                {(isGeneratingSteps || isGeneratingAnswer) && (
-                  <MotionBox
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -20 }}
-                    transition={{ duration: 0.5 }}
-                  >
-                    <Card bg={cardBgColor} shadow="md">
-                      <CardBody>
-                        <Heading as="h3" size="md" mb={4} fontFamily="'Roboto Slab', serif">
-                          {isGeneratingSteps ? "Generating Steps" : "Generating Answer"}
-                        </Heading>
-                        <Progress
-                          size="xs"
-                          isIndeterminate
-                          colorScheme="blue"
-                          sx={{
-                            '& > div': {
-                              transitionDuration: '1.5s',
-                            },
-                          }}
-                        />
-                        <Text mt={2} fontFamily="'Roboto Slab', serif">
-                          {isGeneratingSteps
-                            ? "Analyzing query and formulating reasoning steps..."
-                            : "Synthesizing information and formulating response..."}
-                        </Text>
-                      </CardBody>
-                    </Card>
-                  </MotionBox>
-                )}
+            <AnimatePresence>
+              {isSearching && (
+                <MotionBox
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  transition={{ duration: 0.5 }}
+                >
+                  <Card bg={cardBgColor} shadow="md">
+                    <CardBody>
+                      <Heading as="h3" size="md" mb={4} fontFamily="'Roboto Slab', serif">
+                        {steps.length > 0 ? "Generating Answer" : "Generating Steps"}
+                      </Heading>
+                      <Progress
+                        size="xs"
+                        isIndeterminate
+                        colorScheme="blue"
+                        sx={{
+                          '& > div': {
+                            transitionDuration: '1.5s',
+                          },
+                        }}
+                      />
+                      <Text mt={2} fontFamily="'Roboto Slab', serif">
+                        {steps.length > 0
+                          ? "Synthesizing information and formulating response..."
+                          : "Analyzing query and formulating reasoning steps..."}
+                      </Text>
+                    </CardBody>
+                  </Card>
+                </MotionBox>
+              )}
+            </AnimatePresence>
 
-                {firstQueryAnswer?.query.steps && (
-                  <MotionBox
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -20 }}
-                    transition={{ duration: 0.5 }}
-                  >
-                    <StepsCard steps={firstQueryAnswer.query.steps} />
-                  </MotionBox>
-                )}
+            <AnimatePresence>
+              {steps.length > 0 && (
+                <MotionBox
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  transition={{ duration: 0.5 }}
+                >
+                  <StepsCard steps={steps} isGeneratingAnswer={isGeneratingAnswer} />
+                </MotionBox>
+              )}
+            </AnimatePresence>
 
-                {firstQueryAnswer?.answer && !isGeneratingAnswer && (
-                  <MotionBox
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -20 }}
-                    transition={{ duration: 0.5 }}
-                  >
-                    <AnswerCard
-                      answer={firstQueryAnswer.answer.answer}
-                      reasoning={firstQueryAnswer.answer.reasoning}
-                    />
-                  </MotionBox>
-                )}
-              </>
-            )}
+            <AnimatePresence>
+              {answer && (
+                <MotionBox
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  transition={{ duration: 0.5 }}
+                >
+                  <AnswerCard answer={answer} reasoning={reasoning} isLoading={isGeneratingAnswer} />
+                </MotionBox>
+              )}
+            </AnimatePresence>
 
             <Box>
-              <SearchBox onSearch={handleSearch} isLoading={isLoading || isGeneratingSteps || isGeneratingAnswer} />
+              <SearchBox onSearch={handleSearch} isLoading={isSearching || isGeneratingAnswer} />
             </Box>
           </VStack>
         </Container>

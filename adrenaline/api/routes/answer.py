@@ -11,7 +11,6 @@ from api.pages.data import CoTStep, Query
 from api.patients.cot import generate_cot_answer, generate_cot_steps
 from api.patients.db import get_database
 from api.patients.rag import EmbeddingManager, MilvusManager, retrieve_relevant_notes
-from api.routes.patients import get_patient_data
 from api.users.auth import (
     get_current_active_user,
 )
@@ -51,44 +50,42 @@ async def generate_cot_steps_endpoint(
     db: AsyncIOMotorDatabase = Depends(get_database),  # noqa: B008
     current_user: User = Depends(get_current_active_user),  # noqa: B008
 ) -> Dict[str, List[CoTStep]]:
-    """Generate COT steps.
-
-    Parameters
-    ----------
-    query : Query
-        The query to generate steps for.
-    db : AsyncIOMotorDatabase
-        The database to use.
-    current_user : User
-        The current user.
-
-    Returns
-    -------
-    Dict[str, List[CoTStep]]
-        The generated steps.
-    """
+    """Generate COT steps."""
     try:
+        logger.info(f"Received query: {query}")
+
+        if not query.query:
+            raise ValueError("Query string is empty")
+        if not query.page_id:
+            raise ValueError("Page ID is missing")
+
         mode = "patient" if query.patient_id else "general"
         context = ""
 
         if mode == "patient":
-            patient_data = await get_patient_data(query.patient_id, db, current_user)
+            if not query.patient_id:
+                raise ValueError("Patient ID is missing for patient mode")
+
+            logger.info(f"Fetching patient data for patient ID: {query.patient_id}")
+
+            logger.info("Retrieving relevant notes")
             relevant_notes = await retrieve_relevant_notes(
                 user_query=query.query,
-                notes=patient_data.notes,
                 embedding_manager=EMBEDDING_MANAGER,
                 milvus_manager=MILVUS_MANAGER,
                 patient_id=query.patient_id,
+                top_k=TOP_K,
             )
-            context = "\n".join([note.text for note in relevant_notes])
+            context = "\n".join([note["chunk_text"] for note in relevant_notes])
 
+        logger.info("Generating COT steps")
         steps = await generate_cot_steps(
             user_query=query.query,
             mode=mode,
             context=context,
         )
 
-        # Update the page with the generated steps using the page_id
+        logger.info("Updating page with generated steps")
         page = await db.pages.find_one(
             {"id": query.page_id, "user_id": str(current_user.id)}
         )
@@ -105,11 +102,21 @@ async def generate_cot_steps_endpoint(
             array_filters=[{"elem.query.query": query.query}],
         )
 
+        logger.info("Successfully generated and stored COT steps")
         return {"cot_steps": [step.dict() for step in steps]}
 
+    except ValueError as ve:
+        logger.error(f"Validation error: {str(ve)}")
+        raise HTTPException(status_code=400, detail=str(ve)) from ve
+    except HTTPException as he:
+        logger.error(f"HTTP exception: {he.detail}")
+        raise
     except Exception as e:
+        logger.error(
+            f"Unexpected error in generate_cot_steps_endpoint: {str(e)}", exc_info=True
+        )
         raise HTTPException(
-            status_code=500, detail=f"An error occurred: {str(e)}"
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
         ) from e
 
 
@@ -119,42 +126,42 @@ async def generate_cot_answer_endpoint(
     db: AsyncIOMotorDatabase = Depends(get_database),  # noqa: B008
     current_user: User = Depends(get_current_active_user),  # noqa: B008
 ) -> Dict[str, str]:
-    """Generate a COT answer.
-
-    Parameters
-    ----------
-    query : Query
-        The query to generate an answer for.
-    db : AsyncIOMotorDatabase
-        The database to use.
-    current_user : User
-        The current user.
-
-    Returns
-    -------
-    Dict[str, str]
-        The generated answer and reasoning.
-    """
+    """Generate a COT answer."""
     try:
+        logger.info(f"Received query for answer generation: {query}")
+
+        if not query.query:
+            raise ValueError("Query string is empty")
+        if not query.page_id:
+            raise ValueError("Page ID is missing")
+
         mode = "patient" if query.patient_id else "general"
         context = ""
 
         if mode == "patient":
-            patient_data = await get_patient_data(query.patient_id, db, current_user)
+            if not query.patient_id:
+                raise ValueError("Patient ID is missing for patient mode")
+
+            logger.info(f"Fetching relevant notes for patient ID: {query.patient_id}")
             relevant_notes = await retrieve_relevant_notes(
                 user_query=query.query,
-                notes=patient_data.notes,
                 embedding_manager=EMBEDDING_MANAGER,
                 milvus_manager=MILVUS_MANAGER,
                 patient_id=query.patient_id,
+                top_k=TOP_K,
             )
-            context = "\n".join([note.text for note in relevant_notes])
+            context = "\n".join([note["chunk_text"] for note in relevant_notes])
+            logger.info(f"Relevant notes: {context}")
 
         if not query.steps:
-            raise HTTPException(
-                status_code=400, detail="Steps are required to generate an answer"
+            logger.info("Steps not provided. Generating COT steps.")
+            query.steps = await generate_cot_steps(
+                user_query=query.query,
+                mode=mode,
+                context=context,
             )
 
+        logger.info("Generating COT answer")
         answer, reasoning = await generate_cot_answer(
             user_query=query.query,
             steps=query.steps,
@@ -162,7 +169,7 @@ async def generate_cot_answer_endpoint(
             context=context,
         )
 
-        # Update the page with the generated answer using the page_id
+        logger.info("Updating page with generated answer")
         page = await db.pages.find_one(
             {"id": query.page_id, "user_id": str(current_user.id)}
         )
@@ -176,18 +183,31 @@ async def generate_cot_answer_endpoint(
                     "query_answers.$[elem].answer": {
                         "answer": answer,
                         "reasoning": reasoning,
-                    }
+                    },
+                    "query_answers.$[elem].query.steps": [
+                        step.dict() for step in query.steps
+                    ],
                 }
             },
             array_filters=[{"elem.query.query": query.query}],
         )
 
+        logger.info("Successfully generated and stored COT answer")
         return {
             "answer": answer,
             "reasoning": reasoning,
         }
 
+    except ValueError as ve:
+        logger.error(f"Validation error: {str(ve)}")
+        raise HTTPException(status_code=400, detail=str(ve)) from ve
+    except HTTPException as he:
+        logger.error(f"HTTP exception: {he.detail}")
+        raise
     except Exception as e:
+        logger.error(
+            f"Unexpected error in generate_cot_answer_endpoint: {str(e)}", exc_info=True
+        )
         raise HTTPException(
-            status_code=500, detail=f"An error occurred: {str(e)}"
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
         ) from e

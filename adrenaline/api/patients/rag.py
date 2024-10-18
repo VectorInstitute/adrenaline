@@ -84,12 +84,14 @@ class MilvusManager:
             param=search_params,
             limit=top_k,
             expr=expr,
-            output_fields=["patient_id", "note_id"],
+            output_fields=["patient_id", "note_id", "chunk_id", "chunk_text"],
         )
         return [
             {
                 "patient_id": hit.entity.get("patient_id"),
                 "note_id": hit.entity.get("note_id"),
+                "chunk_id": hit.entity.get("chunk_id"),
+                "chunk_text": hit.entity.get("chunk_text"),
                 "distance": hit.distance,
             }
             for hit in results[0]
@@ -98,22 +100,25 @@ class MilvusManager:
 
 async def retrieve_relevant_notes(
     user_query: str,
-    patient_notes: List[Any],
     embedding_manager: EmbeddingManager,
     milvus_manager: MilvusManager,
     patient_id: int,
-    top_k: int = 2,
-) -> List[Any]:
-    """Retrieve the relevant notes."""
+    top_k: int = 5,
+) -> List[Dict[str, Any]]:
+    """Retrieve the relevant notes directly from Milvus."""
     query_embedding = await embedding_manager.get_embedding(user_query)
     search_results = await milvus_manager.search(query_embedding, patient_id, top_k)
-    logger.info(f"Search results: {search_results}")
-    note_dict = {note.note_id: note for note in patient_notes}
+
     relevant_notes = []
     for result in search_results:
-        note = note_dict.get(result["note_id"])
-        logger.info(f"Retrieved note: {note}")
-        if note:
-            relevant_notes.append((note, result["distance"]))
-    relevant_notes.sort(key=lambda x: x[1])
-    return [note for note, _ in relevant_notes]
+        relevant_notes.append(
+            {
+                "patient_id": result["patient_id"],
+                "note_id": result["note_id"],
+                "chunk_id": result["chunk_id"],
+                "chunk_text": result["chunk_text"],
+                "distance": result["distance"],
+            }
+        )
+
+    return relevant_notes

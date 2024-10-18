@@ -34,7 +34,7 @@ MILVUS_HOST = "localhost"
 MILVUS_PORT = 19530
 EMBEDDING_SERVICE_URL = "http://localhost:8004/embeddings"
 BATCH_SIZE = 1
-MAX_PATIENTS = 2
+MAX_PATIENTS = 8
 EMBEDDING_INSTRUCTION = (
     "Represent the clinical note for retrieval, to provide context for a search query."
 )

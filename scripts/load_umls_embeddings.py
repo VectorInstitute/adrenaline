@@ -150,7 +150,10 @@ class MilvusManager:
             raise
 
     def concept_exists(self, cui: str) -> bool:
-        return self.collection.query(expr=f'cui == "{cui}"', output_fields=["cui"])
+        return (
+            len(self.collection.query(expr=f'cui == "{cui}"', output_fields=["cui"]))
+            > 0
+        )
 
 
 async def process_batch(
@@ -164,9 +167,14 @@ async def process_batch(
         texts = []
 
         for concept in batch_concepts:
-            cuis.append(concept["cui"])
-            preferred_terms.append(concept["preferred_term"])
-            texts.append(concept["combined_text"])
+            if not milvus_manager.concept_exists(concept["cui"]):
+                cuis.append(concept["cui"])
+                preferred_terms.append(concept["preferred_term"])
+                texts.append(concept["combined_text"])
+
+        if not cuis:
+            logger.info("All concepts in this batch already exist in Milvus. Skipping.")
+            return 0
 
         embeddings = await embedding_manager.get_embeddings(texts)
 
@@ -215,9 +223,10 @@ async def process_concepts(
             total=(total + BATCH_SIZE - 1) // BATCH_SIZE,
             desc="Processing concepts",
         ):
-            concepts_processed += await process_batch(
+            processed_count = await process_batch(
                 batch, milvus_manager, embedding_manager
             )
+            concepts_processed += processed_count
 
             cuis = [concept["cui"] for concept in batch]
             await umls_collection.update_many(

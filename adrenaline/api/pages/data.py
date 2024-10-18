@@ -63,6 +63,7 @@ class Page(BaseModel):
 
     id: str
     user_id: str
+    patient_id: Optional[int] = None
     query_answers: List[QueryAnswer]
     created_at: datetime
     updated_at: datetime
