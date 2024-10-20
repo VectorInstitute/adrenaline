@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import List, Optional
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class QAPair(BaseModel):
@@ -48,8 +48,9 @@ class ClinicalNote(BaseModel):
     text: str = Field(..., description="Content of the clinical note")
     note_type: str = Field(..., description="Type of the note (e.g., DS, AD, RR, AR)")
 
-    @validator("encounter_id", pre=True)
-    def convert_encounter_id_to_str(cls, v):  # noqa: N805
+    @field_validator("encounter_id", mode="before")
+    @classmethod
+    def convert_encounter_id_to_str(cls, v):
         """Convert the encounter_id to a string."""
         return str(v)
 

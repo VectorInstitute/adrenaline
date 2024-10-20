@@ -6,21 +6,6 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 
 
-class CoTStep(BaseModel):
-    """A single step in the chain of thought process."""
-
-    step: str = Field(description="A single step in the chain of thought process")
-    reasoning: str = Field(description="The reasoning behind this step")
-
-
-class CoTSteps(BaseModel):
-    """A list of steps in the chain of thought process."""
-
-    steps: List[CoTStep] = Field(
-        description="List of steps in the chain of thought process"
-    )
-
-
 class Answer(BaseModel):
     """The answer to the query."""
 
@@ -40,14 +25,11 @@ class Query(BaseModel):
         The query.
     patient_id : Optional[int] = None
         The patient identifier.
-    steps : Optional[List[CoTStep]] = None
-        The steps in the chain of thought process.
     """
 
     page_id: str
     query: str
     patient_id: Optional[int] = None
-    steps: Optional[List[CoTStep]] = None
 
 
 class QueryAnswer(BaseModel):

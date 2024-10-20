@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from datetime import datetime
 from typing import Any, Dict, List
 
 import httpx
@@ -71,31 +72,54 @@ class MilvusManager:
         await asyncio.to_thread(collection.load)
 
     async def search(
-        self, query_vector: List[float], patient_id: int, top_k: int
+        self,
+        query_vector: List[float],
+        patient_id: int,
+        top_k: int,
+        time_range: Dict[str, int] = None,
     ) -> List[Dict[str, Any]]:
         """Search for the nearest neighbors."""
         await self.ensure_collection_loaded()
         collection = self.get_collection()
-        search_params = {"metric_type": "COSINE", "params": {"nprobe": 10}}
+        search_params = {"metric_type": "IP", "params": {"nprobe": 16, "ef": 64}}
+
         expr = f"patient_id == {patient_id}"
+        if time_range:
+            expr += f" && timestamp >= {time_range['start']} && timestamp <= {time_range['end']}"
+
         results = collection.search(
             data=[query_vector],
             anns_field="embedding",
             param=search_params,
             limit=top_k,
             expr=expr,
-            output_fields=["patient_id", "note_id", "chunk_id", "chunk_text"],
+            output_fields=[
+                "patient_id",
+                "note_id",
+                "note_text",
+                "note_type",
+                "timestamp",
+                "encounter_id",
+            ],
         )
-        return [
+
+        filtered_results = [
             {
                 "patient_id": hit.entity.get("patient_id"),
                 "note_id": hit.entity.get("note_id"),
-                "chunk_id": hit.entity.get("chunk_id"),
-                "chunk_text": hit.entity.get("chunk_text"),
+                "note_text": hit.entity.get("note_text"),
+                "note_type": hit.entity.get("note_type"),
+                "timestamp": hit.entity.get("timestamp"),
+                "encounter_id": hit.entity.get("encounter_id"),
                 "distance": hit.distance,
             }
             for hit in results[0]
         ]
+
+        # Sort by distance in descending order (higher IP score means more similar)
+        filtered_results.sort(key=lambda x: x["distance"], reverse=True)
+
+        return filtered_results
 
 
 async def retrieve_relevant_notes(
@@ -104,21 +128,18 @@ async def retrieve_relevant_notes(
     milvus_manager: MilvusManager,
     patient_id: int,
     top_k: int = 5,
+    time_range: Dict[str, int] = None,
 ) -> List[Dict[str, Any]]:
     """Retrieve the relevant notes directly from Milvus."""
     query_embedding = await embedding_manager.get_embedding(user_query)
-    search_results = await milvus_manager.search(query_embedding, patient_id, top_k)
-
-    relevant_notes = []
+    search_results = await milvus_manager.search(
+        query_embedding, patient_id, top_k, time_range
+    )
     for result in search_results:
-        relevant_notes.append(
-            {
-                "patient_id": result["patient_id"],
-                "note_id": result["note_id"],
-                "chunk_id": result["chunk_id"],
-                "chunk_text": result["chunk_text"],
-                "distance": result["distance"],
-            }
+        print(result["note_type"])
+    logger.info(f"Retrieved {len(search_results)} relevant notes")
+    for i, result in enumerate(search_results):
+        logger.info(
+            f"Result {i+1}: Distance = {result['distance']}, Timestamp = {datetime.fromtimestamp(result['timestamp'])}"
         )
-
-    return relevant_notes
+    return search_results

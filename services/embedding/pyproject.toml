@@ -20,6 +20,7 @@ pydantic = "^2.9.2"
 accelerate = "^0.34.2"
 einops = "^0.8.0"
 datasets = "^3.0.0"
+pylate = "^1.1.2"
 
 [build-system]
 requires = ["poetry-core"]

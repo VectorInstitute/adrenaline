@@ -64,7 +64,8 @@ const HomePage: React.FC = () => {
         const { page_id }: CreatePageResponse = await createPageResponse.json()
 
         if (page_id) {
-          router.push(`/answer/${page_id}?new=true`)
+          // Pass the query as a URL parameter
+          router.push(`/answer/${page_id}?new=true&query=${encodeURIComponent(query)}`)
         } else {
           throw new Error('Failed to get page ID')
         }

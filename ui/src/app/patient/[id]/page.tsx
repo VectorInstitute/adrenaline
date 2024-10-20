@@ -14,21 +14,13 @@ import PatientSummaryCard from '../../components/patient-summary-card'
 import PatientDetailsCard from '../../components/patient-details-card'
 import SearchBox from '../../components/search-box'
 import AnswerCard from '../../components/answer-card'
-import StepsCard from '../../components/steps-card'
 
 const MotionBox = motion(Box)
 
-interface Step {
-  step: string
-  reasoning: string
-}
-
 interface SearchState {
   isSearching: boolean
-  steps: Step[]
   answer: string | null
   reasoning: string | null
-  isGeneratingAnswer: boolean
   pageId: string | null
 }
 
@@ -37,10 +29,8 @@ const PatientPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(true)
   const [searchState, setSearchState] = useState<SearchState>({
     isSearching: false,
-    steps: [],
     answer: null,
     reasoning: null,
-    isGeneratingAnswer: false,
     pageId: null,
   })
   const { id } = useParams<{ id: string }>()
@@ -95,7 +85,7 @@ const PatientPage: React.FC = () => {
       return
     }
 
-    setSearchState(prev => ({ ...prev, isSearching: true, steps: [], answer: null, reasoning: null, isGeneratingAnswer: false }))
+    setSearchState(prev => ({ ...prev, isSearching: true, answer: null, reasoning: null }))
 
     try {
       const token = localStorage.getItem('token')
@@ -119,23 +109,6 @@ const PatientPage: React.FC = () => {
       const { page_id } = await createPageResponse.json()
       setSearchState(prev => ({ ...prev, pageId: page_id }))
 
-      // Generate COT steps
-      const stepsResponse = await fetch('/api/generate_cot_steps', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ query, patient_id: Number(id), page_id }),
-      })
-
-      if (!stepsResponse.ok) {
-        throw new Error('Failed to generate COT steps')
-      }
-
-      const { cot_steps } = await stepsResponse.json()
-      setSearchState(prev => ({ ...prev, steps: cot_steps }))
-
       // Generate answer
       const answerResponse = await fetch('/api/generate_cot_answer', {
         method: 'POST',
@@ -143,7 +116,7 @@ const PatientPage: React.FC = () => {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ query, patient_id: Number(id), page_id, steps: cot_steps }),
+        body: JSON.stringify({ query, patient_id: Number(id), page_id }),
       })
 
       if (!answerResponse.ok) {
@@ -155,7 +128,7 @@ const PatientPage: React.FC = () => {
         ...prev,
         answer: answerData.answer,
         reasoning: answerData.reasoning,
-        isGeneratingAnswer: false,
+        isSearching: false,
       }))
 
     } catch (error) {
@@ -167,12 +140,11 @@ const PatientPage: React.FC = () => {
         duration: 3000,
         isClosable: true,
       })
-    } finally {
       setSearchState(prev => ({ ...prev, isSearching: false }))
     }
   }, [id, toast])
 
-  const { isSearching, steps, answer, reasoning, isGeneratingAnswer, pageId } = searchState
+  const { isSearching, answer, reasoning, pageId } = searchState
 
   return (
     <Flex minHeight="100vh" bg={bgColor}>
@@ -213,7 +185,7 @@ const PatientPage: React.FC = () => {
                         <Card bg={cardBgColor} shadow="md">
                           <CardBody>
                             <Heading as="h3" size="md" mb={4} fontFamily="'Roboto Slab', serif">
-                              {steps.length > 0 ? "Generating Answer" : "Generating Steps"}
+                              Generating Answer
                             </Heading>
                             <Progress
                               size="xs"
@@ -226,24 +198,10 @@ const PatientPage: React.FC = () => {
                               }}
                             />
                             <Text mt={2} fontFamily="'Roboto Slab', serif">
-                              {steps.length > 0
-                                ? "Synthesizing information and formulating response..."
-                                : "Analyzing query and formulating reasoning steps..."}
+                              Analyzing query and formulating response...
                             </Text>
                           </CardBody>
                         </Card>
-                      </MotionBox>
-                    )}
-                  </AnimatePresence>
-                  <AnimatePresence>
-                    {pageId && steps.length > 0 && (
-                      <MotionBox
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -20 }}
-                        transition={{ duration: 0.5 }}
-                      >
-                        <StepsCard steps={steps} isGeneratingAnswer={isGeneratingAnswer} />
                       </MotionBox>
                     )}
                   </AnimatePresence>
@@ -255,7 +213,7 @@ const PatientPage: React.FC = () => {
                         exit={{ opacity: 0, y: -20 }}
                         transition={{ duration: 0.5 }}
                       >
-                        <AnswerCard answer={answer} reasoning={reasoning} isLoading={isGeneratingAnswer} />
+                        <AnswerCard answer={answer} reasoning={reasoning} isLoading={isSearching} />
                       </MotionBox>
                     )}
                   </AnimatePresence>

@@ -98,7 +98,7 @@ const SidebarContent: React.FC<SidebarContentProps> = ({ onClose, isCollapsed, t
           justifyContent="center"
           mb={8}
         >
-          <Box
+          {/* <Box
             position="relative"
             width={isCollapsed ? "40px" : { base: "240px", md: "160px" }}
             height="60px"
@@ -146,7 +146,7 @@ const SidebarContent: React.FC<SidebarContentProps> = ({ onClose, isCollapsed, t
                 loading="eager"
               />
             </Box>
-          </Box>
+          </Box> */}
         </Flex>
         <VStack spacing={4} align="stretch" flex={1}>
           <NavItems textColor={textColor} isCollapsed={isCollapsed} />
@@ -172,7 +172,7 @@ const SidebarContent: React.FC<SidebarContentProps> = ({ onClose, isCollapsed, t
                 mb={2}
               />
               <Text fontSize="sm" color={textColor} textAlign="center" mt={2} mb={4} fontFamily="'Roboto Slab', serif">
-                © {new Date().getFullYear()} odyssey. All rights reserved.
+                © {new Date().getFullYear()} Adrenaline AI.
               </Text>
             </>
           )}
