@@ -7,11 +7,17 @@ interface SearchBoxProps {
   onSearch: (query: string, isPatientMode: boolean) => void;
   isLoading: boolean;
   isPatientPage?: boolean;
+  isCohortPage?: boolean;
 }
 
-const SearchBox: React.FC<SearchBoxProps> = ({ onSearch, isLoading, isPatientPage = false }) => {
+const SearchBox: React.FC<SearchBoxProps> = ({
+  onSearch,
+  isLoading,
+  isPatientPage = false,
+  isCohortPage = false
+}) => {
   const [query, setQuery] = useState<string>('');
-  const [isPatientMode, setIsPatientMode] = useState<boolean>(isPatientPage);
+  const [isPatientMode, setIsPatientMode] = useState<boolean>(false);
 
   const handleQueryChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setQuery(e.target.value);
@@ -36,7 +42,13 @@ const SearchBox: React.FC<SearchBoxProps> = ({ onSearch, isLoading, isPatientPag
 
   const bgColor = useColorModeValue('white', 'gray.800');
   const buttonBgColor = useColorModeValue('#1f5280', '#3a7ab3');
-  const patientTextColor = isPatientMode ? buttonBgColor : 'inherit';
+  const modeTextColor = useColorModeValue('gray.600', 'gray.400');
+
+  const getPlaceholder = () => {
+    if (isPatientPage) return "Ask a question about this patient...";
+    if (isCohortPage) return "Enter a query to search across all patients...";
+    return isPatientMode ? "Enter patient ID" : "Ask a question about the cohort...";
+  };
 
   return (
     <Box w="100%" maxW="600px" my={4}>
@@ -52,7 +64,7 @@ const SearchBox: React.FC<SearchBoxProps> = ({ onSearch, isLoading, isPatientPag
           value={query}
           onChange={handleQueryChange}
           onKeyPress={handleKeyPress}
-          placeholder={isPatientPage ? "Ask a question about this patient..." : (isPatientMode ? "Enter patient ID" : "Ask a question...")}
+          placeholder={getPlaceholder()}
           minRows={3}
           maxRows={10}
           style={{
@@ -78,17 +90,16 @@ const SearchBox: React.FC<SearchBoxProps> = ({ onSearch, isLoading, isPatientPag
           align="center"
           flexDirection={{ base: 'column', sm: 'row' }}
         >
-          {!isPatientPage && (
+          {!isPatientPage && !isCohortPage && (
             <Flex align="center" mb={{ base: 2, sm: 0 }} mr={{ base: 0, sm: 2 }}>
+              <Text fontSize="xs" fontWeight="medium" color={modeTextColor} mr={2}>
+                {isPatientMode ? "Patient" : "Cohort"}
+              </Text>
               <Switch
                 size="sm"
                 isChecked={isPatientMode}
                 onChange={toggleMode}
-                mr={2}
               />
-              <Text fontSize="xs" fontWeight="medium" color={patientTextColor}>
-                Patient
-              </Text>
             </Flex>
           )}
           <Button

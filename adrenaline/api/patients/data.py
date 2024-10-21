@@ -6,6 +6,45 @@ from typing import List, Optional
 from pydantic import BaseModel, Field, field_validator
 
 
+class CohortSearchQuery(BaseModel):
+    """Query for cohort search.
+
+    Attributes
+    ----------
+    query: str
+        The search query.
+    top_k: int
+        The number of top results to return.
+    """
+
+    query: str
+    top_k: int = 100
+
+
+class CohortSearchResult(BaseModel):
+    """Result for cohort search.
+
+    Attributes
+    ----------
+    patient_id: int
+        The patient ID.
+    note_type: str
+        The type of the note.
+    note_text: str
+        The text of the note.
+    timestamp: int
+        The timestamp of the note.
+    similarity_score: float
+        The similarity score.
+    """
+
+    patient_id: int
+    note_type: str
+    note_text: str
+    timestamp: int
+    similarity_score: float
+
+
 class QAPair(BaseModel):
     """
     Represents a question-answer pair.

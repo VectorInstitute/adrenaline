@@ -9,10 +9,6 @@ import Sidebar from '../components/sidebar'
 import { withAuth } from '../components/with-auth'
 import SearchBox from '../components/search-box'
 
-interface CreatePageResponse {
-  page_id: string;
-}
-
 const HomePage: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(false)
   const router = useRouter()
@@ -37,9 +33,6 @@ const HomePage: React.FC = () => {
 
     setIsLoading(true)
     try {
-      const token = localStorage.getItem('token')
-      if (!token) throw new Error('No token found')
-
       if (isPatientMode) {
         const patientId = Number(query)
         if (isNaN(patientId)) {
@@ -47,28 +40,8 @@ const HomePage: React.FC = () => {
         }
         router.push(`/patient/${patientId}`)
       } else {
-        const createPageResponse = await fetch('/api/pages/create', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ query }),
-        })
-
-        if (!createPageResponse.ok) {
-          const errorData = await createPageResponse.json();
-          throw new Error(`Failed to create new page: ${JSON.stringify(errorData)}`);
-        }
-
-        const { page_id }: CreatePageResponse = await createPageResponse.json()
-
-        if (page_id) {
-          // Pass the query as a URL parameter
-          router.push(`/answer/${page_id}?new=true&query=${encodeURIComponent(query)}`)
-        } else {
-          throw new Error('Failed to get page ID')
-        }
+        // Directly route to the cohort search page with the query
+        router.push(`/cohort/search?query=${encodeURIComponent(query)}`)
       }
     } catch (error) {
       console.error('Error:', error)

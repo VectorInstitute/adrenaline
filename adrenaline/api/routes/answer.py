@@ -1,17 +1,24 @@
-"""Routes for generating answers."""
+"""Routes for generating answers and performing cohort searches."""
 
 import logging
 import os
 from datetime import datetime
-from typing import Dict
+from typing import Dict, List
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from api.pages.data import Query
 from api.patients.answer import generate_answer
+from api.patients.data import CohortSearchQuery, CohortSearchResult
 from api.patients.db import get_database
-from api.patients.rag import EmbeddingManager, MilvusManager, retrieve_relevant_notes
+from api.patients.rag import (
+    EmbeddingManager,
+    MilvusManager,
+    NERManager,
+    RAGManager,
+    retrieve_relevant_notes,
+)
 from api.users.auth import get_current_active_user
 from api.users.data import User
 
@@ -36,13 +43,18 @@ EMBEDDING_SERVICE_PORT = os.getenv("EMBEDDING_SERVICE_PORT", "8004")
 EMBEDDING_SERVICE_URL = (
     f"http://{EMBEDDING_SERVICE_HOST}:{EMBEDDING_SERVICE_PORT}/embeddings"
 )
+NER_SERVICE_PORT = os.getenv("NER_SERVICE_PORT", "8000")
+NER_SERVICE_URL = f"http://clinical-ner-service-dev:{NER_SERVICE_PORT}/extract_entities"
+
 EMBEDDING_MANAGER = EmbeddingManager(EMBEDDING_SERVICE_URL)
 MILVUS_MANAGER = MilvusManager(MILVUS_HOST, MILVUS_PORT)
 MILVUS_MANAGER.connect()
+NER_MANAGER = NERManager(NER_SERVICE_URL)
+RAG_MANAGER = RAGManager(EMBEDDING_MANAGER, MILVUS_MANAGER, NER_MANAGER)
 
 
-@router.post("/generate_cot_answer")
-async def generate_cot_answer_endpoint(
+@router.post("/generate_answer")
+async def generate_answer_endpoint(
     query: Query = Body(...),  # noqa: B008
     db: AsyncIOMotorDatabase = Depends(get_database),  # noqa: B008
     current_user: User = Depends(get_current_active_user),  # noqa: B008
@@ -122,6 +134,46 @@ async def generate_cot_answer_endpoint(
     except Exception as e:
         logger.error(
             f"Unexpected error in generate_cot_answer_endpoint: {str(e)}", exc_info=True
+        )
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
+        ) from e
+
+
+@router.post("/cohort_search")
+async def cohort_search_endpoint(
+    query: CohortSearchQuery = Body(...),  # noqa: B008
+    current_user: User = Depends(get_current_active_user),  # noqa: B008
+) -> List[CohortSearchResult]:
+    """Perform a cohort search across all patients."""
+    try:
+        logger.info(f"Received cohort search query: {query.query}")
+
+        if not query.query:
+            raise ValueError("Query string is empty")
+
+        cohort_results = await RAG_MANAGER.cohort_search(query.query, query.top_k)
+        logger.info(f"Found {len(cohort_results)} patients matching the query")
+
+        return [
+            CohortSearchResult(
+                patient_id=patient_id,
+                note_type=note_details["note_type"],
+                note_text=note_details["note_text"][
+                    :500
+                ],  # Limit to first 500 characters
+                timestamp=note_details["timestamp"],
+                similarity_score=note_details["distance"],
+            )
+            for patient_id, note_details in cohort_results
+        ]
+
+    except ValueError as ve:
+        logger.error(f"Validation error: {str(ve)}")
+        raise HTTPException(status_code=400, detail=str(ve)) from ve
+    except Exception as e:
+        logger.error(
+            f"Unexpected error in cohort_search_endpoint: {str(e)}", exc_info=True
         )
         raise HTTPException(
             status_code=500, detail=f"An unexpected error occurred: {str(e)}"

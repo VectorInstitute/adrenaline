@@ -47,7 +47,7 @@ const EntityVisualization: React.FC<EntityVisualizationProps> = ({ text, entitie
 
     const hash = entityTypes.join('').split('').reduce((acc, char) => char.charCodeAt(0) + acc, 0);
     const colorIndex = hash % baseColors.length;
-    const shade = (hash % 3 + 1) * 100; // This will give us shades 100, 200, or 300
+    const shade = (hash % 3 + 1) * 100;
 
     return `${baseColors[colorIndex]}.${shade}`;
   }, []);
@@ -105,6 +105,12 @@ const EntityVisualization: React.FC<EntityVisualizationProps> = ({ text, entitie
                       <Td>{entity.icd10.map(icd => `${icd.chapter}: ${icd.name}`).join(', ')}</Td>
                     </Tr>
                   )}
+                  {Object.entries(entity.meta_anns).map(([key, metaAnn]) => (
+                    <Tr key={key}>
+                      <Td fontWeight="bold">{metaAnn.name}:</Td>
+                      <Td>{metaAnn.value} (Confidence: {metaAnn.confidence.toFixed(2)})</Td>
+                    </Tr>
+                  ))}
                 </Tbody>
               </Table>
             </PopoverBody>
