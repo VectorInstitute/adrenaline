@@ -213,7 +213,7 @@ const NavItems: React.FC<NavItemsProps> = ({ textColor, isCollapsed }) => {
   return (
     <>
       <NavItem icon={FiHome} href="/home" textColor={textColor} isCollapsed={isCollapsed}>
-        Home
+        Discover
       </NavItem>
       <NavItem icon={FiClock} href="/history" textColor={textColor} isCollapsed={isCollapsed}>
         History

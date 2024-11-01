@@ -4,13 +4,11 @@ import asyncio
 import logging
 from typing import Any, Dict, List, Tuple
 
+import chromadb
 import httpx
-from pymilvus import Collection, connections, utility
 
 
-COLLECTION_NAME = "patient_notes"
-MILVUS_HOST = "localhost"
-MILVUS_PORT = 19530
+# Configuration
 EMBEDDING_SERVICE_URL = "http://localhost:8004/embeddings"
 NER_SERVICE_URL = "http://clinical-ner-service-dev:8000/extract_entities"
 
@@ -61,34 +59,35 @@ class NERManager:
         await self.client.aclose()
 
 
-class MilvusManager:
-    """Manager for Milvus operations."""
+class ChromaManager:
+    """Manager for ChromaDB operations."""
 
-    def __init__(self, host: str, port: int):
-        """Initialize the Milvus manager."""
+    def __init__(self, host: str, port: int, collection_name: str):
+        """Initialize the ChromaDB manager."""
         self.host = host
         self.port = port
-        self.collection_name = COLLECTION_NAME
+        self.collection_name = collection_name
+        self.client = None
         self.collection = None
 
     def connect(self):
-        """Connect to Milvus."""
-        connections.connect(host=self.host, port=self.port)
-        if not utility.has_collection(self.collection_name):
-            raise ValueError(
-                f"Collection {self.collection_name} does not exist in Milvus"
+        """Connect to ChromaDB."""
+        try:
+            self.client = chromadb.HttpClient(
+                host=self.host,
+                port=self.port,
+                settings=chromadb.Settings(
+                    anonymized_telemetry=False,
+                    allow_reset=True,
+                ),
             )
-
-    def get_collection(self) -> Collection:
-        """Get the collection."""
-        if self.collection is None:
-            self.collection = Collection(self.collection_name)
-        return self.collection
-
-    async def ensure_collection_loaded(self):
-        """Ensure the collection is loaded."""
-        collection = self.get_collection()
-        await asyncio.to_thread(collection.load)
+            self.collection = self.client.get_collection(
+                name=self.collection_name,
+            )
+            logger.info(f"Connected to ChromaDB collection: {self.collection_name}")
+        except Exception as e:
+            logger.error(f"Error connecting to ChromaDB: {e}")
+            raise
 
     async def search(
         self,
@@ -96,67 +95,49 @@ class MilvusManager:
         patient_id: int = None,
         top_k: int = 5,
     ) -> List[Dict[str, Any]]:
-        """Retrieve the relevant notes directly from Milvus."""
-        await self.ensure_collection_loaded()
-        collection = self.get_collection()
-        search_params = {
-            "metric_type": "IP",
-            "params": {"nprobe": 16, "ef": 64},
-        }
+        """Retrieve the relevant notes from ChromaDB."""
+        if not self.collection:
+            raise RuntimeError("ChromaDB collection not initialized")
 
-        expr = f"patient_id == {patient_id}" if patient_id else None
+        try:
+            where_clause = {"patient_id": str(patient_id)} if patient_id else None
 
-        results = collection.search(
-            data=[query_vector],
-            anns_field="embedding",
-            param=search_params,
-            limit=top_k,
-            expr=expr,
-            output_fields=[
-                "patient_id",
-                "note_id",
-                "note_text",
-                "note_type",
-                "timestamp",
-                "encounter_id",
-            ],
-        )
+            results = await asyncio.to_thread(
+                self.collection.query,
+                query_embeddings=[query_vector],
+                n_results=top_k,
+                where=where_clause,
+                include=["metadatas", "distances", "documents"],
+            )
 
-        filtered_results = [
-            {
-                "patient_id": hit.entity.get("patient_id"),
-                "note_id": hit.entity.get("note_id"),
-                "note_text": hit.entity.get("note_text"),
-                "note_type": hit.entity.get("note_type"),
-                "timestamp": hit.entity.get("timestamp"),
-                "encounter_id": hit.entity.get("encounter_id"),
-                "distance": hit.distance,
-            }
-            for hit in results[0]
-        ]
+            if not results["metadatas"][0]:
+                return []
 
-        filtered_results.sort(key=lambda x: x["distance"], reverse=True)
-        return filtered_results
-
-    async def cohort_search(
-        self, query_vector: List[float], top_k: int = 2
-    ) -> List[Tuple[int, Dict[str, Any]]]:
-        """Retrieve the cohort search results from Milvus."""
-        search_results = await self.search(query_vector, top_k=top_k)
-
-        # Group results by patient_id and keep only the top result for each patient
-        patient_results = {}
-        for result in search_results:
-            patient_id = result["patient_id"]
-            if (
-                patient_id not in patient_results
-                or result["distance"] > patient_results[patient_id]["distance"]
+            filtered_results = []
+            for metadata, distance, document in zip(
+                results["metadatas"][0],
+                results["distances"][0],
+                results["documents"][0],
             ):
-                patient_results[patient_id] = result
+                result = {
+                    "patient_id": int(metadata["patient_id"]),
+                    "note_type": metadata["note_type"],
+                    "note_text": document,  # Use the full document text
+                    "timestamp": int(metadata["timestamp"]),
+                    "encounter_id": metadata["encounter_id"],
+                    "distance": float(
+                        1 - distance
+                    ),  # Convert distance to similarity score
+                }
+                filtered_results.append(result)
 
-        cohort_results = list(patient_results.items())
-        cohort_results.sort(key=lambda x: x[1]["distance"], reverse=True)
-        return cohort_results[:top_k]
+            # Sort by similarity score in descending order
+            filtered_results.sort(key=lambda x: x["distance"], reverse=True)
+            return filtered_results
+
+        except Exception as e:
+            logger.error(f"Error searching ChromaDB: {e}")
+            raise
 
 
 class RAGManager:
@@ -165,12 +146,12 @@ class RAGManager:
     def __init__(
         self,
         embedding_manager: EmbeddingManager,
-        milvus_manager: MilvusManager,
+        chroma_manager: ChromaManager,
         ner_manager: NERManager,
     ):
         """Initialize the RAG manager."""
         self.embedding_manager = embedding_manager
-        self.milvus_manager = milvus_manager
+        self.chroma_manager = chroma_manager
         self.ner_manager = ner_manager
 
     async def retrieve_relevant_notes(
@@ -179,11 +160,12 @@ class RAGManager:
         patient_id: int,
         top_k: int = 5,
     ) -> List[Dict[str, Any]]:
-        """Retrieve the relevant notes directly from Milvus."""
+        """Retrieve the relevant notes from ChromaDB."""
         query_embedding = await self.embedding_manager.get_embedding(user_query)
-        search_results = await self.milvus_manager.search(
+        search_results = await self.chroma_manager.search(
             query_embedding, patient_id, top_k
         )
+        logger.info(f"Retrieved {len(search_results)} relevant notes")
 
         # Extract entities from the query
         query_entities = await self.ner_manager.extract_entities(user_query)
@@ -214,9 +196,10 @@ class RAGManager:
     async def cohort_search(
         self, user_query: str, top_k: int = 2
     ) -> List[Tuple[int, Dict[str, Any]]]:
-        """Retrieve the cohort search results from Milvus."""
+        """Retrieve the cohort search results from ChromaDB."""
         query_embedding = await self.embedding_manager.get_embedding(user_query)
-        cohort_results = await self.milvus_manager.cohort_search(query_embedding, top_k)
+        cohort_results = await self.chroma_manager.cohort_search(query_embedding, top_k)
+        logger.info(f"Retrieved {len(cohort_results)} cohort search results")
 
         # Extract entities from the query
         query_entities = await self.ner_manager.extract_entities(user_query)
@@ -252,14 +235,34 @@ class RAGManager:
 async def retrieve_relevant_notes(
     user_query: str,
     embedding_manager: EmbeddingManager,
-    milvus_manager: MilvusManager,
+    chroma_manager: ChromaManager,
     patient_id: int,
     top_k: int = 5,
 ) -> List[Dict[str, Any]]:
-    """Retrieve the relevant notes directly from Milvus."""
-    query_embedding = await embedding_manager.get_embedding(user_query)
-    search_results = await milvus_manager.search(query_embedding, patient_id, top_k)
-    logger.info(f"Retrieved {len(search_results)} relevant notes")
-    for i, result in enumerate(search_results):
-        logger.info(f"Result {i+1}: Distance = {result['distance']}")
-    return search_results
+    """Retrieve the relevant notes from ChromaDB."""
+    try:
+        query_embedding = await embedding_manager.get_embedding(user_query)
+        search_results = await chroma_manager.search(
+            query_vector=query_embedding, patient_id=patient_id, top_k=top_k
+        )
+
+        if not search_results:
+            logger.warning(f"No relevant notes found for patient {patient_id}")
+            return []
+
+        logger.info(
+            f"Retrieved {len(search_results)} relevant notes for patient {patient_id}"
+        )
+        for i, result in enumerate(search_results):
+            logger.info(
+                f"Result {i+1}: "
+                f"Note Type: {result['note_type']}, "
+                f"Similarity: {result['distance']:.3f}, "
+                f"Text Length: {len(result['note_text'])} chars"
+            )
+
+        return search_results
+
+    except Exception as e:
+        logger.error(f"Error retrieving relevant notes: {e}")
+        raise

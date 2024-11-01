@@ -41,17 +41,21 @@ const EventsTable: React.FC<EventsTableProps> = ({ events }) => {
       },
       {
         Header: 'Details',
-        accessor: (row: Event) => row.code.split('//').slice(1).join(', '),
+        accessor: (row: Event) => row,
         width: 250,
-        Cell: ({ value }: { value: string }) => (
-          <Tooltip label={value} placement="top-start" hasArrow>
-            <Text isTruncated maxWidth="230px" fontSize="xs">{value}</Text>
-          </Tooltip>
-        ),
+        Cell: ({ value }: { value: Event }) => {
+          const eventType = value.code.split('//')[0]
+          const details = eventType === 'LAB' ? value.description : value.code.split('//').slice(1).join(', ')
+          return (
+            <Tooltip label={details} placement="top-start" hasArrow>
+              <Text isTruncated maxWidth="230px" fontSize="xs">{details}</Text>
+            </Tooltip>
+          )
+        },
       },
       {
         Header: 'Value',
-        accessor: (row: Event) => row.numeric_value || row.text_value || 'N/A',
+        accessor: (row: Event) => row.numeric_value ? row.numeric_value.toFixed(2) : row.text_value || 'N/A',
         width: 100,
         Cell: ({ value }: { value: string | number }) => (
           <Text fontSize="xs">{value}</Text>

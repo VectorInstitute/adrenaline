@@ -47,7 +47,7 @@ const SearchBox: React.FC<SearchBoxProps> = ({
   const getPlaceholder = () => {
     if (isPatientPage) return "Ask a question about this patient...";
     if (isCohortPage) return "Enter a query to search across all patients...";
-    return isPatientMode ? "Enter patient ID" : "Ask a question about the cohort...";
+    return isPatientMode ? "Enter patient ID" : "Search and discover patients...";
   };
 
   return (
