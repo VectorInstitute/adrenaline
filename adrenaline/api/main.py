@@ -50,7 +50,7 @@ async def startup_event() -> None:
         await init_db()
         async for session in get_async_session():
             await create_initial_admin(session)
-        await initialize_llm()
+        # await initialize_llm()
     except Exception as e:
         logger.error(f"Startup failed: {str(e)}")
         raise

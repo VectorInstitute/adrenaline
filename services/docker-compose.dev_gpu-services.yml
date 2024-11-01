@@ -1,0 +1,104 @@
+services:
+  clinical-ner-service-dev:
+    build:
+      context: ./clinical_ner
+      dockerfile: Dockerfile.dev
+      args:
+        - NER_SERVICE_PORT=${NER_SERVICE_PORT}
+    image: vectorinstitute/adrenaline:clinical-ner-service-dev-${BUILD_ID}
+    env_file: .env.development
+    ports:
+      - "${NER_SERVICE_PORT}:${NER_SERVICE_PORT}"
+    environment:
+      - NER_SERVICE_PORT=${NER_SERVICE_PORT}
+      - MEDCAT_MODELS_DIR=${MEDCAT_MODELS_DIR}
+      - SELECTED_MEDCAT_MODEL=${SELECTED_MEDCAT_MODEL:-umls_sm_pt2ch_533bab5115c6c2d6.zip}
+    volumes:
+      - ./clinical_ner:/app
+      - ${MEDCAT_MODELS_DIR}:${MEDCAT_MODELS_DIR}:ro
+    networks:
+      - services-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${NER_SERVICE_PORT}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  embedding-service-dev:
+    build:
+      context: ./embedding
+      dockerfile: Dockerfile.dev
+      args:
+        - EMBEDDING_SERVICE_PORT=${EMBEDDING_SERVICE_PORT}
+    image: vectorinstitute/adrenaline:embedding-service-dev-${BUILD_ID}
+    env_file: .env.development
+    ports:
+      - "${EMBEDDING_SERVICE_PORT}:${EMBEDDING_SERVICE_PORT}"
+    volumes:
+      - ./embedding:/app
+    networks:
+      - services-network
+    environment:
+      - CUDA_VISIBLE_DEVICES=0,1
+      - EMBEDDING_SERVICE_PORT=${EMBEDDING_SERVICE_PORT}
+      - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
+      - BATCH_SIZE=${BATCH_SIZE:-1}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 2
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${EMBEDDING_SERVICE_PORT}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  chromadb-dev:
+    image: ghcr.io/chroma-core/chroma:0.5.15
+    volumes:
+      - chroma_data:/chroma/chroma
+    ports:
+      - "${CHROMA_SERVICE_PORT}:8000"
+    environment:
+      - ALLOW_RESET=true
+      - CHROMA_SERVER_HOST=0.0.0.0
+      - CHROMA_SERVER_HTTP_PORT=8000
+    networks:
+      - services-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mongodb-dev:
+    image: mongo:4.4.18
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_USERNAME}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASSWORD}
+    networks:
+      - services-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  mongodb_data:
+  chroma_data:
+
+networks:
+  services-network:
+    name: services-network
+    driver: bridge

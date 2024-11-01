@@ -110,7 +110,7 @@ const PatientPage: React.FC = () => {
       setSearchState(prev => ({ ...prev, pageId: page_id }))
 
       // Generate answer
-      const answerResponse = await fetch('/api/generate_cot_answer', {
+      const answerResponse = await fetch('/api/generate_answer', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
