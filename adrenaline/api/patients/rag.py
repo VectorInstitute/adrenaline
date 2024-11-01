@@ -1,17 +1,14 @@
 """RAG for patients and cohort search."""
 
-import os
 import asyncio
 import logging
 from typing import Any, Dict, List, Tuple
 
 import chromadb
 import httpx
-from chromadb.config import Settings
 
-COLLECTION_NAME = "patient_notes"
-CHROMA_HOST = "localhost"
-CHROMA_PORT = os.getenv("CHROMA_SERVICE_PORT", 8000)
+
+# Configuration
 EMBEDDING_SERVICE_URL = "http://localhost:8004/embeddings"
 NER_SERVICE_URL = "http://clinical-ner-service-dev:8000/extract_entities"
 
@@ -65,16 +62,15 @@ class NERManager:
 class ChromaManager:
     """Manager for ChromaDB operations."""
 
-    def __init__(self, host: str, port: int):
+    def __init__(self, host: str, port: int, collection_name: str):
         """Initialize the ChromaDB manager."""
         self.host = host
         self.port = port
-        self.collection_name = COLLECTION_NAME
+        self.collection_name = collection_name
+        logger.info(f"Connecting to ChromaDB at {host}:{port}")
         self.client = chromadb.HttpClient(
-            Settings(
-                chroma_server_host=self.host,
-                chroma_server_http_port=self.port
-            )
+            host=self.host,
+            port=self.port,
         )
         self.collection = None
 
@@ -82,8 +78,10 @@ class ChromaManager:
         """Connect to ChromaDB."""
         try:
             self.collection = self.client.get_collection(self.collection_name)
-        except ValueError:
-            raise ValueError(f"Collection {self.collection_name} does not exist in ChromaDB")
+        except ValueError as e:
+            raise ValueError(
+                f"Collection {self.collection_name} does not exist in ChromaDB"
+            ) from e
 
     def get_collection(self):
         """Get the collection."""
@@ -99,19 +97,21 @@ class ChromaManager:
     ) -> List[Dict[str, Any]]:
         """Retrieve the relevant notes from ChromaDB."""
         collection = self.get_collection()
-        
+
         where_clause = {"patient_id": patient_id} if patient_id else None
-        
+
         results = await asyncio.to_thread(
             collection.query,
             query_embeddings=[query_vector],
             n_results=top_k,
             where=where_clause,
-            include=["metadatas", "distances"]
+            include=["metadatas", "distances"],
         )
 
         filtered_results = []
-        for idx, (metadata, distance) in enumerate(zip(results['metadatas'][0], results['distances'][0])):
+        for _idx, (metadata, distance) in enumerate(
+            zip(results["metadatas"][0], results["distances"][0])
+        ):
             result = {
                 "patient_id": metadata["patient_id"],
                 "note_id": metadata["note_id"],
@@ -119,7 +119,7 @@ class ChromaManager:
                 "note_type": metadata["note_type"],
                 "timestamp": metadata["timestamp"],
                 "encounter_id": metadata["encounter_id"],
-                "distance": 1 - distance  # Convert distance to similarity score
+                "distance": 1 - distance,  # Convert distance to similarity score
             }
             filtered_results.append(result)
 
@@ -130,7 +130,9 @@ class ChromaManager:
         self, query_vector: List[float], top_k: int = 2
     ) -> List[Tuple[int, Dict[str, Any]]]:
         """Retrieve the cohort search results from ChromaDB."""
-        search_results = await self.search(query_vector, top_k=top_k * 2)  # Get more results initially
+        search_results = await self.search(
+            query_vector, top_k=top_k * 2
+        )  # Get more results initially
 
         # Group results by patient_id and keep only the top result for each patient
         patient_results = {}
@@ -172,6 +174,7 @@ class RAGManager:
         search_results = await self.chroma_manager.search(
             query_embedding, patient_id, top_k
         )
+        logger.info(f"Retrieved {len(search_results)} relevant notes")
 
         # Extract entities from the query
         query_entities = await self.ner_manager.extract_entities(user_query)
@@ -205,6 +208,7 @@ class RAGManager:
         """Retrieve the cohort search results from ChromaDB."""
         query_embedding = await self.embedding_manager.get_embedding(user_query)
         cohort_results = await self.chroma_manager.cohort_search(query_embedding, top_k)
+        logger.info(f"Retrieved {len(cohort_results)} cohort search results")
 
         # Extract entities from the query
         query_entities = await self.ner_manager.extract_entities(user_query)

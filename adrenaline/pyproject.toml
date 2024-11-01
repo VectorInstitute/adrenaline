@@ -26,6 +26,8 @@ polars-lts-cpu = "^1.7.0"
 chromadb = "0.5.15"
 langchain = "^0.3.0"
 langchain-openai = "^0.2.0"
+pysqlite3-binary = "^0.5.4"
+httpx = {extras = ["http2"], version = "^0.27.2"}
 
 [tool.poetry.group.jupyterlab]
 optional = true
@@ -38,7 +40,7 @@ optional = true
 
 [tool.poetry.group.test.dependencies]
 pytest = "^7.1.1"
-pre-commit = "^2.17.0"
+pre-commit = "^4.0.0"
 pytest-cov = "^3.0.0"
 codecov = "^2.1.13"
 mypy = "^1.7.0"

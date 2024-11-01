@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 MONGO_USERNAME = os.getenv("MONGO_USERNAME")
 MONGO_PASSWORD = os.getenv("MONGO_PASSWORD")
-MONGO_HOST = os.getenv("MONGO_HOST", "mongodb")
+MONGO_HOST = os.getenv("MONGO_HOST", "mongodb-dev")
 MONGO_PORT = os.getenv("MONGO_PORT", "27017")
 MONGO_URL = f"mongodb://{MONGO_USERNAME}:{MONGO_PASSWORD}@{MONGO_HOST}:{MONGO_PORT}"
 DB_NAME = "clinical_data"

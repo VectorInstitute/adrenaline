@@ -2,16 +2,14 @@
 This script loads the MIMIC-IV notes and QA pairs into a MongoDB database.
 """
 
+import os
 import asyncio
 import logging
 import time
 from typing import Any, List
 from enum import Enum
 import json
-
-import cycquery.ops as qo
 import pandas as pd
-from cycquery import MIMICIVQuerier
 from motor.motor_asyncio import (
     AsyncIOMotorClient,
     AsyncIOMotorDatabase,
@@ -19,16 +17,14 @@ from motor.motor_asyncio import (
 )
 from pymongo import UpdateOne, IndexModel, ASCENDING
 from pymongo.errors import BulkWriteError
+from pathlib import Path
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
-
-
-class DatabaseType(Enum):
-    MIMICIV = "mimiciv"
+NOTE_PATH = "/mnt/data/clinical_datasets/physionet.org/files/mimic-iv-note/2.2/note"
 
 
 class NoteType(Enum):
@@ -36,33 +32,17 @@ class NoteType(Enum):
     RADIOLOGY = "radiology"
 
 
-def initialize_querier(db_type: DatabaseType) -> MIMICIVQuerier:
-    common_params = {
-        "dbms": "postgresql",
-        "port": 5432,
-        "host": "localhost",
-        "user": "postgres",
-        "password": "pwd",
-    }
-    if db_type == DatabaseType.MIMICIV:
-        return MIMICIVQuerier(database="mimiciv-2.0", **common_params)
-    raise ValueError(f"Unsupported database type: {db_type}")
+def read_notes(file_path: Path) -> pd.DataFrame:
+    """Read notes from compressed CSV file."""
+    logger.info(f"Reading notes from {file_path}")
 
+    df = pd.read_csv(file_path, compression="gzip")
 
-def fetch_notes(
-    querier: MIMICIVQuerier,
-    note_type: NoteType,
-    limit: int = 10000000,
-) -> pd.DataFrame:
-    if isinstance(querier, MIMICIVQuerier):
-        ops = qo.Sequential(qo.DropEmpty("text"), qo.DropNulls("text"))
-        if note_type == NoteType.DISCHARGE:
-            return querier.mimiciv_note.discharge().ops(ops).run(limit=limit)
-        elif note_type == NoteType.RADIOLOGY:
-            return querier.mimiciv_note.radiology().ops(ops).run(limit=limit)
-    raise ValueError(
-        f"Unsupported combination of querier {type(querier)} and note type {note_type}"
-    )
+    # Drop rows with empty or null text
+    df = df.dropna(subset=["text"])
+    df = df[df["text"].str.strip() != ""]
+
+    return df
 
 
 def handle_nas(df: pd.DataFrame) -> pd.DataFrame:
@@ -101,7 +81,7 @@ class DatabaseManager:
                 f"Bulk upsert: {bwe.details.get('nUpserted', 0)} upserted, {bwe.details.get('nModified', 0)} modified"
             )
 
-    async def load_notes(self, notes: pd.DataFrame) -> None:
+    async def load_notes(self, notes: pd.DataFrame, note_type: NoteType) -> None:
         notes = handle_nas(notes)
         batch_size = 10000
         total_notes = len(notes)
@@ -161,31 +141,33 @@ class DatabaseManager:
 
 
 async def main() -> None:
-    mongo_uri = "mongodb://root:password@cyclops.cluster.local:27017"
+    # Configuration
+    mongo_uri = "mongodb://root:password@localhost:27017"
     db_name = "clinical_data"
-    db_manager = DatabaseManager(mongo_uri, db_name)
+    discharge_file = os.path.join(NOTE_PATH, "discharge.csv.gz")
+    radiology_file = os.path.join(NOTE_PATH, "radiology.csv.gz")
 
+    db_manager = DatabaseManager(mongo_uri, db_name)
     start_time = time.time()
 
     await db_manager.ensure_indexes()
 
     try:
-        mimiciv_querier = initialize_querier(DatabaseType.MIMICIV)
-
         logger.info("Loading MIMIC-IV discharge notes...")
-        discharge_notes = fetch_notes(mimiciv_querier, NoteType.DISCHARGE)
-        await db_manager.load_notes(discharge_notes)
+        discharge_notes = read_notes(discharge_file)
+        await db_manager.load_notes(discharge_notes, NoteType.DISCHARGE)
 
         logger.info("Loading MIMIC-IV radiology notes...")
-        radiology_notes = fetch_notes(mimiciv_querier, NoteType.RADIOLOGY)
-        await db_manager.load_notes(radiology_notes)
+        radiology_notes = read_notes(radiology_file)
+        await db_manager.load_notes(radiology_notes, NoteType.RADIOLOGY)
 
         logger.info("Loading EHRNoteQA data...")
-        ehrnoteqa_file_path = "/mnt/data/clinical_datasets/physionet.org/files/ehr-notes-qa-llms/1.0.1/1.0.1/EHRNoteQA.jsonl"
+        ehrnoteqa_file_path = "/Volumes/clinical-data/physionet.org/files/ehr-notes-qa-llms/1.0.1/1.0.1/EHRNoteQA.jsonl"
         await db_manager.load_qa_pairs(ehrnoteqa_file_path)
 
     except Exception as e:
         logger.error(f"An error occurred during data loading: {str(e)}")
+        raise
 
     end_time = time.time()
     logger.info(

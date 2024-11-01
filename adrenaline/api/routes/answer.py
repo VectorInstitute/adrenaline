@@ -13,8 +13,8 @@ from api.patients.answer import generate_answer
 from api.patients.data import CohortSearchQuery, CohortSearchResult
 from api.patients.db import get_database
 from api.patients.rag import (
+    ChromaManager,
     EmbeddingManager,
-    MilvusManager,
     NERManager,
     RAGManager,
     retrieve_relevant_notes,
@@ -34,8 +34,8 @@ LLM_SERVICE_URL = os.getenv("LLM_SERVICE_URL")
 if not LLM_SERVICE_URL:
     raise ValueError("LLM_SERVICE_URL is not set")
 
-MILVUS_HOST = os.getenv("MILVUS_HOST", "localhost")
-MILVUS_PORT = int(os.getenv("MILVUS_PORT", "19530"))
+CHROMA_HOST = os.getenv("CHROMA_SERVICE_HOST", "localhost")
+CHROMA_PORT = int(os.getenv("CHROMA_SERVICE_PORT", "8000"))
 COLLECTION_NAME = "patient_notes"
 TOP_K = 5
 EMBEDDING_SERVICE_HOST = os.getenv("EMBEDDING_SERVICE_HOST", "localhost")
@@ -47,10 +47,10 @@ NER_SERVICE_PORT = os.getenv("NER_SERVICE_PORT", "8000")
 NER_SERVICE_URL = f"http://clinical-ner-service-dev:{NER_SERVICE_PORT}/extract_entities"
 
 EMBEDDING_MANAGER = EmbeddingManager(EMBEDDING_SERVICE_URL)
-MILVUS_MANAGER = MilvusManager(MILVUS_HOST, MILVUS_PORT)
-MILVUS_MANAGER.connect()
+CHROMA_MANAGER = ChromaManager(CHROMA_HOST, CHROMA_PORT, COLLECTION_NAME)
+CHROMA_MANAGER.connect()
 NER_MANAGER = NERManager(NER_SERVICE_URL)
-RAG_MANAGER = RAGManager(EMBEDDING_MANAGER, MILVUS_MANAGER, NER_MANAGER)
+RAG_MANAGER = RAGManager(EMBEDDING_MANAGER, CHROMA_MANAGER, NER_MANAGER)
 
 
 @router.post("/generate_answer")
@@ -79,7 +79,7 @@ async def generate_answer_endpoint(
             relevant_notes = await retrieve_relevant_notes(
                 user_query=query.query,
                 embedding_manager=EMBEDDING_MANAGER,
-                milvus_manager=MILVUS_MANAGER,
+                chroma_manager=CHROMA_MANAGER,
                 patient_id=query.patient_id,
                 top_k=TOP_K,
             )

@@ -1,19 +1,13 @@
-"""Script to load note embeddings into Milvus."""
+"""Script to load note embeddings into ChromaDB."""
 
 import asyncio
-import json
-import traceback
 import logging
-from typing import List, Dict
+from typing import List, Dict, Any
 import argparse
-from motor.motor_asyncio import AsyncIOMotorClient
-from pymilvus import (
-    connections,
-    Collection,
-    FieldSchema,
-    CollectionSchema,
-    DataType,
-    utility,
+from motor.motor_asyncio import (
+    AsyncIOMotorClient,
+    AsyncIOMotorDatabase,
+    AsyncIOMotorCollection,
 )
 import httpx
 import time
@@ -24,19 +18,30 @@ from tenacity import (
     wait_exponential,
     retry_if_exception_type,
 )
+import sys
+from pymongo import IndexModel, ASCENDING
+
+try:
+    import pysqlite3  # noqa: F401
+
+    sys.modules["sqlite3"] = sys.modules.pop("pysqlite3")
+except ImportError:
+    pass
+import chromadb
+from chromadb.config import Settings
 
 # Configuration
 MONGO_URI = "mongodb://root:password@cyclops.cluster.local:27017"
 MONGO_DB_NAME = "clinical_data"
-MILVUS_HOST = "localhost"
-MILVUS_PORT = 19530
+CHROMA_HOST = "localhost"
+CHROMA_PORT = 8000
 EMBEDDING_SERVICE_URL = "http://localhost:8004/embeddings"
-BATCH_SIZE = 32
+BATCH_SIZE = 100
 MAX_PATIENTS = 16
 EMBEDDING_INSTRUCTION = (
     "Represent the clinical note for retrieval, to provide context for a search query."
 )
-VECTOR_DIM = 768  # S-PubMedBert-MS-MARCO output dimension
+VECTOR_DIM = 768
 
 # Configure logging
 logging.basicConfig(
@@ -45,12 +50,54 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+class DatabaseManager:
+    def __init__(self, mongo_uri: str, db_name: str):
+        self.client: AsyncIOMotorClient[Any] = AsyncIOMotorClient(mongo_uri)
+        self.db: AsyncIOMotorDatabase[Any] = self.client[db_name]
+        self.patients_collection: AsyncIOMotorCollection[Any] = self.db.patients
+
+    async def ensure_indexes(self) -> None:
+        """Check and create indexes only if they don't exist"""
+        existing_indexes = await self.patients_collection.index_information()
+        indexes = [
+            IndexModel([("patient_id", ASCENDING)], unique=True),
+            IndexModel([("notes.note_id", ASCENDING)]),
+        ]
+
+        # Check and create indexes if they don't exist
+        for index in indexes:
+            index_name = f"{index.document['key'][0][0]}_{index.document['key'][0][1]}"
+            if index_name not in existing_indexes:
+                await self.patients_collection.create_index(
+                    index.document["key"], unique=index.document.get("unique", False)
+                )
+                logger.info(f"Created index: {index_name}")
+            else:
+                logger.info(f"Index '{index_name}' already exists, skipping creation.")
+
+    async def get_patients_batch(
+        self, skip: int, limit: int, query: dict
+    ) -> List[Dict]:
+        """Get a batch of patients from MongoDB"""
+        try:
+            cursor = self.patients_collection.find(query).skip(skip).limit(limit)
+            return await cursor.to_list(length=limit)
+        except Exception as e:
+            logger.error(f"Error fetching patients batch: {e}")
+            raise
+
+    async def close(self):
+        """Close the MongoDB connection"""
+        self.client.close()
+
+
 class EmbeddingManager:
     def __init__(self, embedding_service_url: str):
         self.embedding_service_url = embedding_service_url
         self.client = httpx.AsyncClient(
             timeout=60.0,
-            limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
+            limits=httpx.Limits(max_connections=100, max_keepalive_connections=50),
+            http2=True,
         )
 
     @retry(
@@ -60,89 +107,44 @@ class EmbeddingManager:
     )
     async def get_embeddings(self, texts: List[str]) -> List[List[float]]:
         try:
-            logger.info(f"Sending request to embedding service with {len(texts)} texts")
             response = await self.client.post(
                 self.embedding_service_url,
                 json={"texts": texts, "instruction": EMBEDDING_INSTRUCTION},
             )
-            logger.info(
-                f"Received response from embedding service. Status code: {response.status_code}"
-            )
-
             response.raise_for_status()
-
-            response_json = response.json()
-            logger.info("Successfully parsed response JSON")
-
-            embeddings = response_json["embeddings"]
-            logger.info(f"Retrieved {len(embeddings)} embeddings from response")
-
-            return embeddings
-        except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error occurred: {e}")
-            logger.error(f"Response content: {e.response.text}")
-            raise
-        except httpx.RequestError as e:
-            logger.error(f"Request error occurred: {e}")
-            raise
-        except KeyError as e:
-            logger.error(
-                f"KeyError: {e}. Response JSON: {json.dumps(response_json, indent=2)}"
-            )
-            raise
-        except json.JSONDecodeError as e:
-            logger.error(f"JSON decode error: {e}. Response text: {response.text}")
-            raise
+            return response.json()["embeddings"]
         except Exception as e:
-            logger.error(f"Unexpected error occurred: {e}")
-            logger.error(f"Error type: {type(e).__name__}")
-            logger.error(f"Error traceback: {traceback.format_exc()}")
+            logger.error(f"Error getting embeddings: {e}")
             raise
 
     async def close(self):
         await self.client.aclose()
 
 
-class MilvusManager:
+class ChromaManager:
     def __init__(self, host: str, port: int):
         self.host = host
         self.port = port
         self.collection_name = "patient_notes"
+        self.client = None
         self.collection = None
 
     def connect(self):
-        connections.connect(host=self.host, port=self.port)
-        logger.info(f"Connected to Milvus at {self.host}:{self.port}")
+        self.client = chromadb.HttpClient(
+            host=self.host, port=self.port, settings=Settings(allow_reset=True)
+        )
+        logger.info(f"Connected to ChromaDB at {self.host}:{self.port}")
 
-    def get_or_create_collection(self, dim: int) -> Collection:
-        if not utility.has_collection(self.collection_name):
-            self.collection = self.create_collection(dim)
-        else:
-            self.collection = Collection(self.collection_name)
-            self.collection.load()
-        return self.collection
-
-    def create_collection(self, dim: int):
-        fields = [
-            FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=True),
-            FieldSchema(name="patient_id", dtype=DataType.INT64),
-            FieldSchema(name="note_id", dtype=DataType.VARCHAR, max_length=64),
-            FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=dim),
-            FieldSchema(name="note_text", dtype=DataType.VARCHAR, max_length=65535),
-            FieldSchema(name="note_type", dtype=DataType.VARCHAR, max_length=64),
-            FieldSchema(name="timestamp", dtype=DataType.INT64),
-            FieldSchema(name="encounter_id", dtype=DataType.INT64),
-        ]
-        schema = CollectionSchema(fields, "Patient notes collection")
-        collection = Collection(self.collection_name, schema)
-        index_params = {
-            "metric_type": "IP",
-            "index_type": "HNSW",
-            "params": {"M": 16, "efConstruction": 500},
-        }
-        collection.create_index(field_name="embedding", index_params=index_params)
-        logger.info(f"Created Milvus collection: {self.collection_name}")
-        return collection
+    def get_or_create_collection(self):
+        try:
+            self.collection = self.client.get_or_create_collection(
+                name=self.collection_name,
+                metadata={"description": "Patient notes collection"},
+            )
+            return self.collection
+        except Exception as e:
+            logger.error(f"Error creating/getting collection: {e}")
+            raise
 
     def insert_vectors(
         self,
@@ -155,190 +157,153 @@ class MilvusManager:
         encounter_ids: List[int],
     ):
         try:
-            entities = [
+            metadatas = [
                 {
-                    "patient_id": pid,
-                    "note_id": nid,
-                    "embedding": emb,
-                    "note_text": txt,
+                    "patient_id": str(pid),
                     "note_type": nt,
                     "timestamp": ts,
-                    "encounter_id": eid,
+                    "encounter_id": str(eid),
+                    "note_text": txt,
                 }
-                for pid, nid, emb, txt, nt, ts, eid in zip(
-                    patient_ids,
-                    note_ids,
-                    embeddings,
-                    note_texts,
-                    note_types,
-                    timestamps,
-                    encounter_ids,
+                for pid, nt, ts, eid, txt in zip(
+                    patient_ids, note_types, timestamps, encounter_ids, note_texts
                 )
             ]
-            self.collection.insert(entities)
-            self.collection.flush()
-            logger.info(f"Successfully inserted {len(entities)} entities into Milvus")
+
+            self.collection.add(
+                ids=note_ids,
+                embeddings=embeddings,
+                metadatas=metadatas,
+                documents=note_texts,
+            )
         except Exception as e:
-            logger.error(f"Error inserting vectors into Milvus: {e}")
+            logger.error(f"Error inserting vectors into ChromaDB: {e}")
             raise
 
     def patient_exists(self, patient_id: int) -> bool:
-        return self.collection.query(
-            expr=f"patient_id == {patient_id}", output_fields=["patient_id"]
-        )
+        try:
+            results = self.collection.get(
+                where={"patient_id": str(patient_id)}, limit=1
+            )
+            return len(results["ids"]) > 0
+        except Exception:
+            return False
+
+    def reset_collection(self):
+        if self.client:
+            self.client.reset()
+            logger.info("Reset ChromaDB collections")
 
 
 async def process_batch(
     patient_id: int,
     batch_notes: List[Dict],
-    milvus_manager: MilvusManager,
+    chroma_manager: ChromaManager,
     embedding_manager: EmbeddingManager,
 ) -> int:
     try:
-        all_texts = [note["text"] for note in batch_notes]
-        all_note_ids = [note["note_id"] for note in batch_notes]
-        all_note_types = [note["note_type"] for note in batch_notes]
-        all_timestamps = [int(note["timestamp"].timestamp()) for note in batch_notes]
-        all_encounter_ids = [note["encounter_id"] for note in batch_notes]
-        embeddings = await embedding_manager.get_embeddings(all_texts)
+        texts = [note["text"] for note in batch_notes]
+        embeddings = await embedding_manager.get_embeddings(texts)
 
-        if not all(
-            isinstance(emb, list) and all(isinstance(x, float) for x in emb)
-            for emb in embeddings
-        ):
-            raise ValueError(
-                "Embeddings are not in the correct format (list of float lists)"
-            )
+        note_ids = [note["note_id"] for note in batch_notes]
+        note_types = [note["note_type"] for note in batch_notes]
+        timestamps = [int(note["timestamp"].timestamp()) for note in batch_notes]
+        encounter_ids = [note["encounter_id"] for note in batch_notes]
+        patient_ids = [patient_id] * len(texts)
 
-        patient_ids = [int(patient_id)] * len(all_texts)
-
-        logger.info(f"Inserting {len(patient_ids)} vectors into Milvus")
-        logger.info(
-            f"Sample data - Patient ID: {patient_ids[0]}, Note ID: {all_note_ids[0]}"
-        )
-
-        milvus_manager.insert_vectors(
+        chroma_manager.insert_vectors(
             patient_ids,
-            all_note_ids,
+            note_ids,
             embeddings,
-            all_texts,
-            all_note_types,
-            all_timestamps,
-            all_encounter_ids,
+            texts,
+            note_types,
+            timestamps,
+            encounter_ids,
         )
-        return len(all_texts)
+        return len(texts)
     except Exception as e:
         logger.error(f"Error processing batch for patient {patient_id}: {e}")
         return 0
 
 
 async def process_patients(
-    mongo_client: AsyncIOMotorClient,
-    milvus_manager: MilvusManager,
+    db_manager: DatabaseManager,
+    chroma_manager: ChromaManager,
     embedding_manager: EmbeddingManager,
     recreate_collection: bool,
 ):
-    db = mongo_client[MONGO_DB_NAME]
-    patients_collection = db.patients
+    query = {} if recreate_collection else {"processed": {"$ne": True}}
+    total_patients = await db_manager.patients_collection.count_documents(query)
+    total_patients = min(MAX_PATIENTS, total_patients)
 
     patients_processed = 0
     total_notes_processed = 0
     start_time = time.time()
 
-    async with await mongo_client.start_session() as session:
-        query = {} if recreate_collection else {"processed": {"$ne": True}}
-        cursor = patients_collection.find(
-            query, no_cursor_timeout=True, session=session
-        ).limit(MAX_PATIENTS)
+    async for patient in tqdm(
+        db_manager.patients_collection.find(query).limit(MAX_PATIENTS),
+        total=total_patients,
+        desc="Processing patients",
+    ):
+        patient_id = patient["patient_id"]
+        notes = patient.get("notes", [])
 
-        patient_count = await patients_collection.count_documents(
-            query, session=session
+        if not notes:
+            continue
+
+        for i in range(0, len(notes), BATCH_SIZE):
+            batch_notes = notes[i : i + BATCH_SIZE]
+            notes_processed = await process_batch(
+                patient_id, batch_notes, chroma_manager, embedding_manager
+            )
+            total_notes_processed += notes_processed
+
+        await db_manager.patients_collection.update_one(
+            {"patient_id": patient_id}, {"$set": {"processed": True}}
         )
-        total = min(MAX_PATIENTS, patient_count)
 
-        async for patient in tqdm(cursor, total=total, desc="Processing patients"):
-            patient_id = patient["patient_id"]
-
-            if not recreate_collection and milvus_manager.patient_exists(patient_id):
-                logger.info(f"Patient {patient_id} already exists in Milvus. Skipping.")
-                continue
-
-            notes = patient.get("notes", [])
-
-            if not notes:
-                logger.warning(f"Patient {patient_id} has no notes. Skipping.")
-                continue
-
-            patient_notes_processed = 0
-
-            for i in range(0, len(notes), BATCH_SIZE):
-                batch_notes = notes[i : i + BATCH_SIZE]
-                notes_processed = await process_batch(
-                    patient_id, batch_notes, milvus_manager, embedding_manager
-                )
-                patient_notes_processed += notes_processed
-                total_notes_processed += notes_processed
-
-            patients_processed += 1
-            logger.info(
-                f"Processed patient {patient_id}: {patient_notes_processed} notes embedded"
-            )
-
-            await patients_collection.update_one(
-                {"patient_id": patient_id},
-                {"$set": {"processed": True}},
-                session=session,
-            )
-
-            if patients_processed >= MAX_PATIENTS:
-                break
+        patients_processed += 1
 
     end_time = time.time()
-    total_time = end_time - start_time
     logger.info(
-        f"Finished processing {patients_processed} patients and {total_notes_processed} notes in {total_time:.2f} seconds"
+        f"Processed {patients_processed} patients and {total_notes_processed} "
+        f"notes in {end_time - start_time:.2f} seconds"
     )
-    if total_notes_processed > 0:
-        logger.info(
-            f"Average processing time per note: {total_time/total_notes_processed:.4f} seconds"
-        )
 
 
 async def main(recreate_collection: bool):
-    mongo_client = AsyncIOMotorClient(MONGO_URI)
-    milvus_manager = MilvusManager(MILVUS_HOST, MILVUS_PORT)
+    db_manager = DatabaseManager(MONGO_URI, MONGO_DB_NAME)
+    chroma_manager = ChromaManager(CHROMA_HOST, CHROMA_PORT)
     embedding_manager = EmbeddingManager(EMBEDDING_SERVICE_URL)
 
-    milvus_manager.connect()
-
     try:
+        chroma_manager.connect()
         if recreate_collection:
-            utility.drop_collection(milvus_manager.collection_name)
-            logger.info(
-                f"Dropped existing collection: {milvus_manager.collection_name}"
-            )
+            chroma_manager.reset_collection()
+        chroma_manager.get_or_create_collection()
 
-        milvus_manager.collection = milvus_manager.get_or_create_collection(
-            dim=VECTOR_DIM
-        )
+        # Ensure indexes exist
+        await db_manager.ensure_indexes()
+
         await process_patients(
-            mongo_client, milvus_manager, embedding_manager, recreate_collection
+            db_manager, chroma_manager, embedding_manager, recreate_collection
         )
     except Exception as e:
         logger.error(f"An error occurred during processing: {e}")
+        raise
     finally:
         await embedding_manager.close()
-        connections.disconnect(MILVUS_HOST)
+        await db_manager.close()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Process patient notes and create embeddings in Milvus."
+        description="Process patient notes and create embeddings in ChromaDB."
     )
     parser.add_argument(
         "--recreate",
         action="store_true",
-        help="Recreate the entire collection in Milvus",
+        help="Recreate the entire collection in ChromaDB",
     )
     args = parser.parse_args()
 
