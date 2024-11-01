@@ -162,7 +162,7 @@ async def main() -> None:
         await db_manager.load_notes(radiology_notes, NoteType.RADIOLOGY)
 
         logger.info("Loading EHRNoteQA data...")
-        ehrnoteqa_file_path = "/Volumes/clinical-data/physionet.org/files/ehr-notes-qa-llms/1.0.1/1.0.1/EHRNoteQA.jsonl"
+        ehrnoteqa_file_path = "/mnt/data/clinical_datasets/physionet.org/files/ehr-notes-qa-llms/1.0.1/1.0.1/EHRNoteQA.jsonl"
         await db_manager.load_qa_pairs(ehrnoteqa_file_path)
 
     except Exception as e:

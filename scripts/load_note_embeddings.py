@@ -4,6 +4,7 @@ import asyncio
 import logging
 from typing import List, Dict, Any
 import argparse
+from datetime import datetime
 from motor.motor_asyncio import (
     AsyncIOMotorClient,
     AsyncIOMotorDatabase,
@@ -11,6 +12,7 @@ from motor.motor_asyncio import (
 )
 import httpx
 import time
+import pandas as pd
 from tqdm.asyncio import tqdm
 from tenacity import (
     retry,
@@ -19,7 +21,7 @@ from tenacity import (
     retry_if_exception_type,
 )
 import sys
-from pymongo import IndexModel, ASCENDING
+from pymongo import ASCENDING
 
 try:
     import pysqlite3  # noqa: F401
@@ -50,35 +52,51 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def parse_timestamp(timestamp_str: str) -> int:
+    """Convert timestamp string to Unix timestamp."""
+    try:
+        dt = pd.to_datetime(timestamp_str)
+        return int(dt.timestamp())
+    except Exception as e:
+        logger.error(f"Error parsing timestamp {timestamp_str}: {e}")
+        return int(datetime.now().timestamp())
+
+
 class DatabaseManager:
     def __init__(self, mongo_uri: str, db_name: str):
-        self.client: AsyncIOMotorClient[Any] = AsyncIOMotorClient(mongo_uri)
+        self.client: AsyncIOMotorClient[Any] = AsyncIOMotorClient(
+            mongo_uri, serverSelectionTimeoutMS=5000
+        )
         self.db: AsyncIOMotorDatabase[Any] = self.client[db_name]
         self.patients_collection: AsyncIOMotorCollection[Any] = self.db.patients
 
     async def ensure_indexes(self) -> None:
-        """Check and create indexes only if they don't exist"""
-        existing_indexes = await self.patients_collection.index_information()
-        indexes = [
-            IndexModel([("patient_id", ASCENDING)], unique=True),
-            IndexModel([("notes.note_id", ASCENDING)]),
-        ]
+        """Create MongoDB indexes if they don't exist."""
+        try:
+            existing_indexes = await self.patients_collection.index_information()
 
-        # Check and create indexes if they don't exist
-        for index in indexes:
-            index_name = f"{index.document['key'][0][0]}_{index.document['key'][0][1]}"
-            if index_name not in existing_indexes:
-                await self.patients_collection.create_index(
-                    index.document["key"], unique=index.document.get("unique", False)
-                )
-                logger.info(f"Created index: {index_name}")
-            else:
-                logger.info(f"Index '{index_name}' already exists, skipping creation.")
+            indexes = [("patient_id", ASCENDING), ("notes.note_id", ASCENDING)]
+
+            for field, direction in indexes:
+                index_name = f"{field}_{direction}"
+                if index_name not in existing_indexes:
+                    await self.patients_collection.create_index(
+                        [(field, direction)],
+                        unique=(field == "patient_id"),
+                        background=True,
+                    )
+                    logger.info(f"Created index: {index_name}")
+                else:
+                    logger.info(f"Index '{index_name}' already exists")
+
+        except Exception as e:
+            logger.error(f"Error ensuring indexes: {e}")
+            raise
 
     async def get_patients_batch(
         self, skip: int, limit: int, query: dict
     ) -> List[Dict]:
-        """Get a batch of patients from MongoDB"""
+        """Fetch a batch of patients from MongoDB."""
         try:
             cursor = self.patients_collection.find(query).skip(skip).limit(limit)
             return await cursor.to_list(length=limit)
@@ -87,7 +105,7 @@ class DatabaseManager:
             raise
 
     async def close(self):
-        """Close the MongoDB connection"""
+        """Close the MongoDB connection."""
         self.client.close()
 
 
@@ -106,6 +124,7 @@ class EmbeddingManager:
         retry=retry_if_exception_type((httpx.HTTPStatusError, httpx.RequestError)),
     )
     async def get_embeddings(self, texts: List[str]) -> List[List[float]]:
+        """Get embeddings for a list of texts."""
         try:
             response = await self.client.post(
                 self.embedding_service_url,
@@ -118,6 +137,7 @@ class EmbeddingManager:
             raise
 
     async def close(self):
+        """Close the HTTP client."""
         await self.client.aclose()
 
 
@@ -130,17 +150,52 @@ class ChromaManager:
         self.collection = None
 
     def connect(self):
+        """Connect to ChromaDB instance."""
         self.client = chromadb.HttpClient(
-            host=self.host, port=self.port, settings=Settings(allow_reset=True)
+            host=self.host,
+            port=self.port,
+            settings=Settings(allow_reset=True, anonymized_telemetry=False),
         )
         logger.info(f"Connected to ChromaDB at {self.host}:{self.port}")
 
-    def get_or_create_collection(self):
+    def reset_collection(self):
+        """Reset the collection in ChromaDB."""
         try:
+            if self.client is None:
+                raise RuntimeError(
+                    "ChromaDB client not initialized. Call connect() first."
+                )
+
+            # Delete the collection if it exists
+            try:
+                self.client.delete_collection(name=self.collection_name)
+                logger.info(f"Deleted collection: {self.collection_name}")
+            except Exception as e:
+                logger.debug(f"Collection deletion skipped: {e}")
+
+            # Reset the collection reference
+            self.collection = None
+            logger.info("Reset ChromaDB collection")
+        except Exception as e:
+            logger.error(f"Error resetting collection: {e}")
+            raise
+
+    def get_or_create_collection(self):
+        """Get or create a ChromaDB collection with cosine distance metric."""
+        try:
+            if self.client is None:
+                raise RuntimeError(
+                    "ChromaDB client not initialized. Call connect() first."
+                )
+
             self.collection = self.client.get_or_create_collection(
                 name=self.collection_name,
-                metadata={"description": "Patient notes collection"},
+                metadata={
+                    "description": "Patient notes collection",
+                    "hnsw:space": "cosine",
+                },
             )
+            logger.info(f"Got/created collection: {self.collection_name}")
             return self.collection
         except Exception as e:
             logger.error(f"Error creating/getting collection: {e}")
@@ -156,7 +211,13 @@ class ChromaManager:
         timestamps: List[int],
         encounter_ids: List[int],
     ):
+        """Insert vectors and metadata into ChromaDB."""
         try:
+            if self.collection is None:
+                raise RuntimeError(
+                    "Collection not initialized. Call get_or_create_collection() first."
+                )
+
             metadatas = [
                 {
                     "patient_id": str(pid),
@@ -171,28 +232,15 @@ class ChromaManager:
             ]
 
             self.collection.add(
-                ids=note_ids,
+                ids=[str(nid) for nid in note_ids],  # Ensure note_ids are strings
                 embeddings=embeddings,
                 metadatas=metadatas,
                 documents=note_texts,
             )
+            logger.debug(f"Inserted {len(note_ids)} vectors into ChromaDB")
         except Exception as e:
             logger.error(f"Error inserting vectors into ChromaDB: {e}")
             raise
-
-    def patient_exists(self, patient_id: int) -> bool:
-        try:
-            results = self.collection.get(
-                where={"patient_id": str(patient_id)}, limit=1
-            )
-            return len(results["ids"]) > 0
-        except Exception:
-            return False
-
-    def reset_collection(self):
-        if self.client:
-            self.client.reset()
-            logger.info("Reset ChromaDB collections")
 
 
 async def process_batch(
@@ -201,13 +249,14 @@ async def process_batch(
     chroma_manager: ChromaManager,
     embedding_manager: EmbeddingManager,
 ) -> int:
+    """Process a batch of notes for a patient."""
     try:
         texts = [note["text"] for note in batch_notes]
         embeddings = await embedding_manager.get_embeddings(texts)
 
-        note_ids = [note["note_id"] for note in batch_notes]
+        note_ids = [str(note["note_id"]) for note in batch_notes]
         note_types = [note["note_type"] for note in batch_notes]
-        timestamps = [int(note["timestamp"].timestamp()) for note in batch_notes]
+        timestamps = [parse_timestamp(note["timestamp"]) for note in batch_notes]
         encounter_ids = [note["encounter_id"] for note in batch_notes]
         patient_ids = [patient_id] * len(texts)
 
@@ -232,6 +281,7 @@ async def process_patients(
     embedding_manager: EmbeddingManager,
     recreate_collection: bool,
 ):
+    """Process all patients and their notes."""
     query = {} if recreate_collection else {"processed": {"$ne": True}}
     total_patients = await db_manager.patients_collection.count_documents(query)
     total_patients = min(MAX_PATIENTS, total_patients)
@@ -261,7 +311,6 @@ async def process_patients(
         await db_manager.patients_collection.update_one(
             {"patient_id": patient_id}, {"$set": {"processed": True}}
         )
-
         patients_processed += 1
 
     end_time = time.time()
@@ -272,6 +321,7 @@ async def process_patients(
 
 
 async def main(recreate_collection: bool):
+    """Main execution function."""
     db_manager = DatabaseManager(MONGO_URI, MONGO_DB_NAME)
     chroma_manager = ChromaManager(CHROMA_HOST, CHROMA_PORT)
     embedding_manager = EmbeddingManager(EMBEDDING_SERVICE_URL)
@@ -281,10 +331,7 @@ async def main(recreate_collection: bool):
         if recreate_collection:
             chroma_manager.reset_collection()
         chroma_manager.get_or_create_collection()
-
-        # Ensure indexes exist
         await db_manager.ensure_indexes()
-
         await process_patients(
             db_manager, chroma_manager, embedding_manager, recreate_collection
         )

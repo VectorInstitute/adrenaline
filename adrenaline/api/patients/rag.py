@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-import os
 from typing import Any, Dict, List, Tuple
 
 import chromadb
@@ -68,27 +67,27 @@ class ChromaManager:
         self.host = host
         self.port = port
         self.collection_name = collection_name
-        logger.info(f"Connecting to ChromaDB at {host}:{port}")
-        self.client = chromadb.HttpClient(
-            host=self.host,
-            port=self.port,
-        )
+        self.client = None
         self.collection = None
 
     def connect(self):
         """Connect to ChromaDB."""
         try:
-            self.collection = self.client.get_collection(self.collection_name)
-        except ValueError as e:
-            raise ValueError(
-                f"Collection {self.collection_name} does not exist in ChromaDB"
-            ) from e
-
-    def get_collection(self):
-        """Get the collection."""
-        if self.collection is None:
-            self.connect()
-        return self.collection
+            self.client = chromadb.HttpClient(
+                host=self.host,
+                port=self.port,
+                settings=chromadb.Settings(
+                    anonymized_telemetry=False,
+                    allow_reset=True,
+                ),
+            )
+            self.collection = self.client.get_collection(
+                name=self.collection_name,
+            )
+            logger.info(f"Connected to ChromaDB collection: {self.collection_name}")
+        except Exception as e:
+            logger.error(f"Error connecting to ChromaDB: {e}")
+            raise
 
     async def search(
         self,
@@ -97,57 +96,48 @@ class ChromaManager:
         top_k: int = 5,
     ) -> List[Dict[str, Any]]:
         """Retrieve the relevant notes from ChromaDB."""
-        collection = self.get_collection()
+        if not self.collection:
+            raise RuntimeError("ChromaDB collection not initialized")
 
-        where_clause = {"patient_id": patient_id} if patient_id else None
+        try:
+            where_clause = {"patient_id": str(patient_id)} if patient_id else None
 
-        results = await asyncio.to_thread(
-            collection.query,
-            query_embeddings=[query_vector],
-            n_results=top_k,
-            where=where_clause,
-            include=["metadatas", "distances"],
-        )
+            results = await asyncio.to_thread(
+                self.collection.query,
+                query_embeddings=[query_vector],
+                n_results=top_k,
+                where=where_clause,
+                include=["metadatas", "distances", "documents"],
+            )
 
-        filtered_results = []
-        for _idx, (metadata, distance) in enumerate(
-            zip(results["metadatas"][0], results["distances"][0])
-        ):
-            result = {
-                "patient_id": metadata["patient_id"],
-                "note_id": metadata["note_id"],
-                "note_text": metadata["note_text"],
-                "note_type": metadata["note_type"],
-                "timestamp": metadata["timestamp"],
-                "encounter_id": metadata["encounter_id"],
-                "distance": 1 - distance,  # Convert distance to similarity score
-            }
-            filtered_results.append(result)
+            if not results["metadatas"][0]:
+                return []
 
-        filtered_results.sort(key=lambda x: x["distance"], reverse=True)
-        return filtered_results
-
-    async def cohort_search(
-        self, query_vector: List[float], top_k: int = 2
-    ) -> List[Tuple[int, Dict[str, Any]]]:
-        """Retrieve the cohort search results from ChromaDB."""
-        search_results = await self.search(
-            query_vector, top_k=top_k * 2
-        )  # Get more results initially
-
-        # Group results by patient_id and keep only the top result for each patient
-        patient_results = {}
-        for result in search_results:
-            patient_id = result["patient_id"]
-            if (
-                patient_id not in patient_results
-                or result["distance"] > patient_results[patient_id]["distance"]
+            filtered_results = []
+            for metadata, distance, document in zip(
+                results["metadatas"][0],
+                results["distances"][0],
+                results["documents"][0],
             ):
-                patient_results[patient_id] = result
+                result = {
+                    "patient_id": int(metadata["patient_id"]),
+                    "note_type": metadata["note_type"],
+                    "note_text": document,  # Use the full document text
+                    "timestamp": int(metadata["timestamp"]),
+                    "encounter_id": metadata["encounter_id"],
+                    "distance": float(
+                        1 - distance
+                    ),  # Convert distance to similarity score
+                }
+                filtered_results.append(result)
 
-        cohort_results = list(patient_results.items())
-        cohort_results.sort(key=lambda x: x[1]["distance"], reverse=True)
-        return cohort_results[:top_k]
+            # Sort by similarity score in descending order
+            filtered_results.sort(key=lambda x: x["distance"], reverse=True)
+            return filtered_results
+
+        except Exception as e:
+            logger.error(f"Error searching ChromaDB: {e}")
+            raise
 
 
 class RAGManager:
@@ -250,9 +240,29 @@ async def retrieve_relevant_notes(
     top_k: int = 5,
 ) -> List[Dict[str, Any]]:
     """Retrieve the relevant notes from ChromaDB."""
-    query_embedding = await embedding_manager.get_embedding(user_query)
-    search_results = await chroma_manager.search(query_embedding, patient_id, top_k)
-    logger.info(f"Retrieved {len(search_results)} relevant notes")
-    for i, result in enumerate(search_results):
-        logger.info(f"Result {i+1}: Distance = {result['distance']}")
-    return search_results
+    try:
+        query_embedding = await embedding_manager.get_embedding(user_query)
+        search_results = await chroma_manager.search(
+            query_vector=query_embedding, patient_id=patient_id, top_k=top_k
+        )
+
+        if not search_results:
+            logger.warning(f"No relevant notes found for patient {patient_id}")
+            return []
+
+        logger.info(
+            f"Retrieved {len(search_results)} relevant notes for patient {patient_id}"
+        )
+        for i, result in enumerate(search_results):
+            logger.info(
+                f"Result {i+1}: "
+                f"Note Type: {result['note_type']}, "
+                f"Similarity: {result['distance']:.3f}, "
+                f"Text Length: {len(result['note_text'])} chars"
+            )
+
+        return search_results
+
+    except Exception as e:
+        logger.error(f"Error retrieving relevant notes: {e}")
+        raise
