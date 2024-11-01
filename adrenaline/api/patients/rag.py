@@ -1,13 +1,14 @@
 """RAG for patients and cohort search."""
 
-import os
 import asyncio
 import logging
+import os
 from typing import Any, Dict, List, Tuple
 
 import chromadb
 import httpx
 from chromadb.config import Settings
+
 
 COLLECTION_NAME = "patient_notes"
 CHROMA_HOST = "localhost"
@@ -71,10 +72,7 @@ class ChromaManager:
         self.port = port
         self.collection_name = COLLECTION_NAME
         self.client = chromadb.HttpClient(
-            Settings(
-                chroma_server_host=self.host,
-                chroma_server_http_port=self.port
-            )
+            Settings(chroma_server_host=self.host, chroma_server_http_port=self.port)
         )
         self.collection = None
 
@@ -83,7 +81,9 @@ class ChromaManager:
         try:
             self.collection = self.client.get_collection(self.collection_name)
         except ValueError:
-            raise ValueError(f"Collection {self.collection_name} does not exist in ChromaDB")
+            raise ValueError(
+                f"Collection {self.collection_name} does not exist in ChromaDB"
+            )
 
     def get_collection(self):
         """Get the collection."""
@@ -99,19 +99,21 @@ class ChromaManager:
     ) -> List[Dict[str, Any]]:
         """Retrieve the relevant notes from ChromaDB."""
         collection = self.get_collection()
-        
+
         where_clause = {"patient_id": patient_id} if patient_id else None
-        
+
         results = await asyncio.to_thread(
             collection.query,
             query_embeddings=[query_vector],
             n_results=top_k,
             where=where_clause,
-            include=["metadatas", "distances"]
+            include=["metadatas", "distances"],
         )
 
         filtered_results = []
-        for idx, (metadata, distance) in enumerate(zip(results['metadatas'][0], results['distances'][0])):
+        for idx, (metadata, distance) in enumerate(
+            zip(results["metadatas"][0], results["distances"][0])
+        ):
             result = {
                 "patient_id": metadata["patient_id"],
                 "note_id": metadata["note_id"],
@@ -119,7 +121,7 @@ class ChromaManager:
                 "note_type": metadata["note_type"],
                 "timestamp": metadata["timestamp"],
                 "encounter_id": metadata["encounter_id"],
-                "distance": 1 - distance  # Convert distance to similarity score
+                "distance": 1 - distance,  # Convert distance to similarity score
             }
             filtered_results.append(result)
 
@@ -130,7 +132,9 @@ class ChromaManager:
         self, query_vector: List[float], top_k: int = 2
     ) -> List[Tuple[int, Dict[str, Any]]]:
         """Retrieve the cohort search results from ChromaDB."""
-        search_results = await self.search(query_vector, top_k=top_k * 2)  # Get more results initially
+        search_results = await self.search(
+            query_vector, top_k=top_k * 2
+        )  # Get more results initially
 
         # Group results by patient_id and keep only the top result for each patient
         patient_results = {}
