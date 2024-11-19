@@ -77,22 +77,33 @@ services:
       retries: 5
 
   mongodb-dev:
-    image: mongo:4.4.18
-    ports:
-      - "27017:27017"
-    volumes:
-      - mongodb_data:/data/db
-    environment:
-      - MONGO_INITDB_ROOT_USERNAME=${MONGO_USERNAME}
-      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASSWORD}
-    networks:
-      - services-network
-    healthcheck:
-      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+      image: mongo:4.4.18
+      ports:
+        - "27017:27017"
+      volumes:
+        - mongodb_data:/data/db
+      environment:
+        - MONGO_INITDB_ROOT_USERNAME=${MONGO_USERNAME}
+        - MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASSWORD}
+        # Add MongoDB memory configuration
+        - MONGODB_MEMORY_MAX=512
+        - MONGODB_MEMORY_MIN=256
+      deploy:
+        resources:
+          limits:
+            memory: 1G
+          reservations:
+            memory: 512M
+      command: ["mongod", "--wiredTigerCacheSizeGB", "0.25"]
+      networks:
+        - services-network
+      healthcheck:
+        test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+        interval: 30s
+        timeout: 10s
+        retries: 3
+        start_period: 40s
+      restart: unless-stopped
 
 volumes:
   mongodb_data:

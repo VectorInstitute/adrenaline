@@ -106,6 +106,8 @@ class Event(BaseModel):
         The hospital admission/encounter identifier.
     code : str
         The code of the event.
+    description : Optional[str]
+        The description of the event.
     timestamp : Optional[datetime]
         The timestamp of the event.
     numeric_value : Optional[float]
@@ -117,6 +119,7 @@ class Event(BaseModel):
     patient_id: int
     encounter_id: Optional[str]
     code: str
+    description: Optional[str]
     timestamp: Optional[datetime]
     numeric_value: Optional[float]
     text_value: Optional[str]

@@ -22,6 +22,7 @@ export interface ClinicalNote {
     patient_id: number;
     encounter_id: string;
     code: string;
+    description: string;
     timestamp: string;
     numeric_value: number;
     text_value: string;
