@@ -26,7 +26,7 @@ polars-lts-cpu = "^1.7.0"
 chromadb = "0.5.15"
 langchain = "^0.3.0"
 langchain-openai = "^0.2.0"
-pysqlite3-binary = "^0.5.4"
+pysqlite3 = "^0.5"
 httpx = {extras = ["http2"], version = "^0.27.2"}
 
 [tool.poetry.group.jupyterlab]
