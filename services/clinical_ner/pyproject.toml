@@ -11,10 +11,11 @@ packages = [
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = ">=3.9, <3.12"
-fastapi = "^0.112.1"
+python = ">=3.11, <3.12"
+fastapi = "^0.115.1"
 uvicorn = "^0.30.6"
 medcat = "^1.13.0"
+starlette = "^0.40.0"
 
 [build-system]
 requires = ["poetry-core"]
