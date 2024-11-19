@@ -25,7 +25,8 @@ services:
       retries: 3
       start_period: 40s
 
-  embedding-service-dev:
+  embedding-service-dev-gpu:
+    profiles: ["gpu"]
     build:
       context: ./embedding
       dockerfile: Dockerfile.dev
@@ -58,6 +59,39 @@ services:
       retries: 3
       start_period: 40s
 
+  embedding-service-dev-cpu:
+    profiles: ["cpu"]
+    build:
+      context: ./embedding
+      dockerfile: Dockerfile.dev
+      args:
+        - EMBEDDING_SERVICE_PORT=${EMBEDDING_SERVICE_PORT}
+    image: vectorinstitute/adrenaline:embedding-service-dev-${BUILD_ID}
+    env_file: .env.development
+    ports:
+      - "${EMBEDDING_SERVICE_PORT}:${EMBEDDING_SERVICE_PORT}"
+    volumes:
+      - ./embedding:/app
+    networks:
+      - services-network
+    environment:
+      - EMBEDDING_SERVICE_PORT=${EMBEDDING_SERVICE_PORT}
+      - BATCH_SIZE=${BATCH_SIZE:-1}
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          cpus: '1'
+          memory: 2G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${EMBEDDING_SERVICE_PORT}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
   chromadb-dev:
     image: ghcr.io/chroma-core/chroma:0.5.15
     volumes:
@@ -77,33 +111,32 @@ services:
       retries: 5
 
   mongodb-dev:
-      image: mongo:4.4.18
-      ports:
-        - "27017:27017"
-      volumes:
-        - mongodb_data:/data/db
-      environment:
-        - MONGO_INITDB_ROOT_USERNAME=${MONGO_USERNAME}
-        - MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASSWORD}
-        # Add MongoDB memory configuration
-        - MONGODB_MEMORY_MAX=512
-        - MONGODB_MEMORY_MIN=256
-      deploy:
-        resources:
-          limits:
-            memory: 1G
-          reservations:
-            memory: 512M
-      command: ["mongod", "--wiredTigerCacheSizeGB", "0.25"]
-      networks:
-        - services-network
-      healthcheck:
-        test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
-        interval: 30s
-        timeout: 10s
-        retries: 3
-        start_period: 40s
-      restart: unless-stopped
+    image: mongo:4.4.18
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_USERNAME}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASSWORD}
+      - MONGODB_MEMORY_MAX=512
+      - MONGODB_MEMORY_MIN=256
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+    command: ["mongod", "--wiredTigerCacheSizeGB", "0.25"]
+    networks:
+      - services-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
 
 volumes:
   mongodb_data:

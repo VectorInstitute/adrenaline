@@ -9,7 +9,6 @@ import time
 from typing import Any, List
 from enum import Enum
 import json
-import gzip
 import pandas as pd
 from motor.motor_asyncio import (
     AsyncIOMotorClient,
@@ -36,13 +35,13 @@ class NoteType(Enum):
 def read_notes(file_path: Path) -> pd.DataFrame:
     """Read notes from compressed CSV file."""
     logger.info(f"Reading notes from {file_path}")
-    
-    df = pd.read_csv(file_path, compression='gzip')
-    
+
+    df = pd.read_csv(file_path, compression="gzip")
+
     # Drop rows with empty or null text
-    df = df.dropna(subset=['text'])
-    df = df[df['text'].str.strip() != '']
-    
+    df = df.dropna(subset=["text"])
+    df = df[df["text"].str.strip() != ""]
+
     return df
 
 
