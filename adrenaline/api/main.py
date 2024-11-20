@@ -7,7 +7,6 @@ from typing import Dict
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.patients.answer import initialize_llm
 from api.patients.db import check_database_connection
 from api.routes.answer import router as answer_router
 from api.routes.auth import router as auth_router
@@ -50,7 +49,7 @@ async def startup_event() -> None:
         await init_db()
         async for session in get_async_session():
             await create_initial_admin(session)
-        await initialize_llm()
+        # await initialize_llm()
     except Exception as e:
         logger.error(f"Startup failed: {str(e)}")
         raise

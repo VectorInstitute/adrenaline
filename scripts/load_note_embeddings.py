@@ -33,7 +33,7 @@ import chromadb
 from chromadb.config import Settings
 
 # Configuration
-MONGO_URI = "mongodb://root:password@cyclops.cluster.local:27017"
+MONGO_URI = "mongodb://root:password@localhost:27017"
 MONGO_DB_NAME = "clinical_data"
 CHROMA_HOST = "localhost"
 CHROMA_PORT = 8000

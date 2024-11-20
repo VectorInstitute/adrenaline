@@ -50,7 +50,7 @@ def handle_nas(df: pd.DataFrame) -> pd.DataFrame:
         note_id=df["note_id"].fillna(-1),
         subject_id=df["subject_id"].fillna(-1),
         hadm_id=df["hadm_id"].fillna(-1),
-        category=df["category"].fillna("unknown"),
+        category=df["note_type"].fillna("unknown"),
     )
 
 

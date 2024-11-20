@@ -2,6 +2,13 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    build-essential \
+    libsqlite3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir poetry
 
@@ -18,11 +25,6 @@ ENV BACKEND_PORT=${BACKEND_PORT}
 ENV FRONTEND_PORT=${FRONTEND_PORT}
 ENV JWT_SECRET_KEY=${JWT_SECRET_KEY}
 
-# Print port values
-RUN echo "FRONTEND_PORT: ${FRONTEND_PORT}"
-RUN echo "BACKEND_PORT: ${BACKEND_PORT}"
-
 EXPOSE ${BACKEND_PORT}
 
-# Use shell form to ensure environment variable expansion
 CMD sh -c "poetry run uvicorn api.main:app --host 0.0.0.0 --reload --port ${BACKEND_PORT}"
