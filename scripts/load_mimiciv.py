@@ -24,7 +24,7 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
-NOTE_PATH = "/mnt/data/clinical_datasets/physionet.org/files/mimic-iv-note/2.2/note"
+NOTE_PATH = "/Volumes/clinical-data/physionet.org/files/mimic-iv-note/2.2/note"
 
 
 class NoteType(Enum):
@@ -50,7 +50,7 @@ def handle_nas(df: pd.DataFrame) -> pd.DataFrame:
         note_id=df["note_id"].fillna(-1),
         subject_id=df["subject_id"].fillna(-1),
         hadm_id=df["hadm_id"].fillna(-1),
-        note_type=df["note_type"].fillna("unknown"),
+        category=df["note_type"].fillna("unknown"),
     )
 
 
@@ -97,7 +97,7 @@ class DatabaseManager:
                             "encounter_id": note["hadm_id"],
                             "timestamp": note["charttime"],
                             "text": note["text"],
-                            "note_type": note["note_type"],
+                            "note_type": note_type.value,
                         }
                     }
                 },
@@ -146,7 +146,6 @@ async def main() -> None:
     db_name = "clinical_data"
     discharge_file = os.path.join(NOTE_PATH, "discharge.csv.gz")
     radiology_file = os.path.join(NOTE_PATH, "radiology.csv.gz")
-
     db_manager = DatabaseManager(mongo_uri, db_name)
     start_time = time.time()
 
@@ -162,7 +161,7 @@ async def main() -> None:
         await db_manager.load_notes(radiology_notes, NoteType.RADIOLOGY)
 
         logger.info("Loading EHRNoteQA data...")
-        ehrnoteqa_file_path = "/mnt/data/clinical_datasets/physionet.org/files/ehr-notes-qa-llms/1.0.1/1.0.1/EHRNoteQA.jsonl"
+        ehrnoteqa_file_path = "/Volumes/clinical-data/physionet.org/files/ehr-notes-qa-llms/1.0.1/1.0.1/EHRNoteQA.jsonl"
         await db_manager.load_qa_pairs(ehrnoteqa_file_path)
 
     except Exception as e:

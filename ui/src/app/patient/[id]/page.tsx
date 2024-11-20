@@ -3,8 +3,27 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { useParams } from 'next/navigation'
 import {
-  Box, Flex, VStack, useColorModeValue, Container, Card, CardBody,
-  useToast, Skeleton, Text, Grid, GridItem, Progress, Heading
+  Box,
+  Flex,
+  VStack,
+  useColorModeValue,
+  Container,
+  Card,
+  CardBody,
+  useToast,
+  Skeleton,
+  Text,
+  Grid,
+  GridItem,
+  Progress,
+  Heading,
+  Table,
+  Thead,
+  Tbody,
+  Tr,
+  Th,
+  Td,
+  TableContainer
 } from '@chakra-ui/react'
 import { motion, AnimatePresence } from 'framer-motion'
 import Sidebar from '../../components/sidebar'
@@ -12,6 +31,7 @@ import { withAuth } from '../../components/with-auth'
 import { PatientData } from '../../types/patient'
 import PatientSummaryCard from '../../components/patient-summary-card'
 import PatientDetailsCard from '../../components/patient-details-card'
+import PatientEncountersTable from '../../components/patient-encounters-table'
 import SearchBox from '../../components/search-box'
 import AnswerCard from '../../components/answer-card'
 
@@ -26,7 +46,9 @@ interface SearchState {
 
 const PatientPage: React.FC = () => {
   const [patientData, setPatientData] = useState<PatientData | null>(null)
+  const [encounters, setEncounters] = useState<string[]>([])
   const [isLoading, setIsLoading] = useState<boolean>(true)
+  const [isLoadingEncounters, setIsLoadingEncounters] = useState<boolean>(true)
   const [searchState, setSearchState] = useState<SearchState>({
     isSearching: false,
     answer: null,
@@ -38,6 +60,36 @@ const PatientPage: React.FC = () => {
 
   const bgColor = useColorModeValue('gray.50', 'gray.900')
   const cardBgColor = useColorModeValue('white', 'gray.800')
+
+  const fetchEncounters = useCallback(async () => {
+    setIsLoadingEncounters(true)
+    try {
+      const token = localStorage.getItem('token')
+      if (!token) throw new Error('No token found')
+
+      const response = await fetch(`/api/patient_data/encounters/${id}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch encounters')
+      }
+
+      const data = await response.json()
+      setEncounters(data)
+    } catch (error) {
+      console.error('Error loading encounters:', error)
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "An error occurred while loading encounters",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+      })
+    } finally {
+      setIsLoadingEncounters(false)
+    }
+  }, [id, toast])
 
   const fetchPatientData = useCallback(async () => {
     setIsLoading(true)
@@ -70,8 +122,8 @@ const PatientPage: React.FC = () => {
   }, [id, toast])
 
   useEffect(() => {
-    fetchPatientData()
-  }, [fetchPatientData])
+    Promise.all([fetchPatientData(), fetchEncounters()])
+  }, [fetchPatientData, fetchEncounters])
 
   const handleSearch = useCallback(async (query: string) => {
     if (!query.trim()) {
@@ -91,7 +143,6 @@ const PatientPage: React.FC = () => {
       const token = localStorage.getItem('token')
       if (!token) throw new Error('No token found')
 
-      // Create a new page
       const createPageResponse = await fetch('/api/pages/create', {
         method: 'POST',
         headers: {
@@ -109,7 +160,6 @@ const PatientPage: React.FC = () => {
       const { page_id } = await createPageResponse.json()
       setSearchState(prev => ({ ...prev, pageId: page_id }))
 
-      // Generate answer
       const answerResponse = await fetch('/api/generate_answer', {
         method: 'POST',
         headers: {
@@ -173,7 +223,14 @@ const PatientPage: React.FC = () => {
                       </Card>
                     )}
                   </MotionBox>
+
+                  <PatientEncountersTable
+                    encounters={encounters}
+                    isLoading={isLoadingEncounters}
+                  />
+
                   <SearchBox onSearch={handleSearch} isLoading={isSearching} isPatientPage={true} />
+
                   <AnimatePresence>
                     {isSearching && (
                       <MotionBox
@@ -205,6 +262,7 @@ const PatientPage: React.FC = () => {
                       </MotionBox>
                     )}
                   </AnimatePresence>
+
                   <AnimatePresence>
                     {pageId && answer && (
                       <MotionBox

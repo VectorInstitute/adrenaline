@@ -24,8 +24,11 @@ export interface ClinicalNote {
     code: string;
     description: string;
     timestamp: string;
-    numeric_value: number;
-    text_value: string;
+    numeric_value?: number;
+    text_value?: string;
+    event_type: string;
+    environment: string | null;
+    details: string;
   }
 
   export interface MetaAnnotation {
