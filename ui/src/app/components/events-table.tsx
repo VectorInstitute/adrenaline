@@ -31,7 +31,7 @@ const EventsTable: React.FC<EventsTableProps> = ({ events }) => {
       },
       {
         Header: 'Event Type',
-        accessor: (row: Event) => row.code.split('//')[0],
+        accessor: (row: Event) => row.code.split('//')[1],
         width: 120,
         Cell: ({ value }: { value: string }) => (
           <Badge colorScheme={getEventColor(value)} fontSize="2xs" px={1} py={0.5} borderRadius="full">
@@ -44,7 +44,7 @@ const EventsTable: React.FC<EventsTableProps> = ({ events }) => {
         accessor: (row: Event) => row,
         width: 250,
         Cell: ({ value }: { value: Event }) => {
-          const eventType = value.code.split('//')[0]
+          const eventType = value.code.split('//')[1]
           const details = eventType === 'LAB' ? value.description : value.code.split('//').slice(1).join(', ')
           return (
             <Tooltip label={details} placement="top-start" hasArrow>

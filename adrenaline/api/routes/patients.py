@@ -2,14 +2,18 @@
 
 import logging
 import os
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from api.patients.data import ClinicalNote, PatientData, QAPair
 from api.patients.db import get_database
-from api.patients.ehr import fetch_patient_events, init_lazy_df
+from api.patients.ehr import (
+    fetch_patient_events,
+    init_lazy_df,
+    fetch_patient_encounters,
+)
 from api.users.auth import (
     get_current_active_user,
 )
@@ -30,6 +34,42 @@ MEDS_DATA_DIR = os.getenv(
 
 # Initialize the lazy DataFrame
 init_lazy_df(MEDS_DATA_DIR)
+
+
+@router.get("/patient_data/encounters/{patient_id}", response_model=List[str])
+async def get_encounters(
+    patient_id: int,
+    db: AsyncIOMotorDatabase[Any] = Depends(get_database),  # noqa: B008
+    current_user: User = Depends(get_current_active_user),  # noqa: B008
+) -> List[str]:
+    """
+    Retrieve a list of all unique encounters for a patient.
+
+    Parameters
+    ----------
+    patient_id : int
+        The ID of the patient.
+    db : AsyncIOMotorDatabase
+        The database connection.
+    current_user : User
+        The current authenticated user.
+
+    Returns
+    -------
+    List[str]
+        The list of unique encounters.
+    """
+    try:
+        encounters = fetch_patient_encounters(patient_id)
+        return encounters
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving encounters for patient ID {patient_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while retrieving patient data",
+        ) from e
 
 
 @router.get("/patient_data/{patient_id}", response_model=PatientData)
