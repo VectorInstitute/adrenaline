@@ -114,6 +114,12 @@ class Event(BaseModel):
         The numeric value of the event.
     text_value : Optional[str]
         The text value of the event.
+    event_type : Optional[str]
+        The type of the event.
+    environment : Optional[str]
+        The environment in which the event occurred.
+    details: Optional[str]
+        Additional details about the event.
     """
 
     patient_id: int
@@ -123,6 +129,9 @@ class Event(BaseModel):
     timestamp: Optional[datetime]
     numeric_value: Optional[float]
     text_value: Optional[str]
+    event_type: Optional[str]
+    environment: Optional[str]
+    details: Optional[str]
 
 
 class PatientData(BaseModel):

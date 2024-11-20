@@ -1,10 +1,7 @@
 """Script to create instruction answers for EHR data."""
 
 import os
-from api.patients.ehr import (
-    init_lazy_df,
-    fetch_recent_encounter_events
-)
+from api.patients.ehr import init_lazy_df, fetch_recent_encounter_events
 
 
 MEDS_DATA_DIR = os.getenv(
@@ -23,6 +20,3 @@ for event in events:
 
 
 print(events_str)
-
-
-

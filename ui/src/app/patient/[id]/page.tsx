@@ -3,19 +3,19 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { useParams } from 'next/navigation'
 import {
-  Box, 
-  Flex, 
-  VStack, 
-  useColorModeValue, 
-  Container, 
-  Card, 
+  Box,
+  Flex,
+  VStack,
+  useColorModeValue,
+  Container,
+  Card,
   CardBody,
-  useToast, 
-  Skeleton, 
-  Text, 
-  Grid, 
-  GridItem, 
-  Progress, 
+  useToast,
+  Skeleton,
+  Text,
+  Grid,
+  GridItem,
+  Progress,
   Heading,
   Table,
   Thead,
@@ -31,6 +31,7 @@ import { withAuth } from '../../components/with-auth'
 import { PatientData } from '../../types/patient'
 import PatientSummaryCard from '../../components/patient-summary-card'
 import PatientDetailsCard from '../../components/patient-details-card'
+import PatientEncountersTable from '../../components/patient-encounters-table'
 import SearchBox from '../../components/search-box'
 import AnswerCard from '../../components/answer-card'
 
@@ -195,40 +196,6 @@ const PatientPage: React.FC = () => {
 
   const { isSearching, answer, reasoning, pageId } = searchState
 
-  const EncountersTable = () => (
-    <Card bg={cardBgColor} shadow="md" mt={6}>
-      <CardBody>
-        <Heading as="h3" size="md" mb={4} fontFamily="'Roboto Slab', serif">
-          Patient Encounters
-        </Heading>
-        {isLoadingEncounters ? (
-          <Skeleton height="200px" />
-        ) : encounters.length > 0 ? (
-          <TableContainer>
-            <Table variant="simple" size="sm">
-              <Thead>
-                <Tr>
-                  <Th>Encounter ID</Th>
-                  <Th>Date</Th>
-                </Tr>
-              </Thead>
-              <Tbody>
-                {encounters.map((encounter, index) => (
-                  <Tr key={index}>
-                    <Td>{encounter}</Td>
-                    <Td>{new Date(encounter.split('_')[1]).toLocaleDateString()}</Td>
-                  </Tr>
-                ))}
-              </Tbody>
-            </Table>
-          </TableContainer>
-        ) : (
-          <Text>No encounters found</Text>
-        )}
-      </CardBody>
-    </Card>
-  )
-
   return (
     <Flex minHeight="100vh" bg={bgColor}>
       <Sidebar />
@@ -257,10 +224,13 @@ const PatientPage: React.FC = () => {
                     )}
                   </MotionBox>
 
-                  <EncountersTable />
-                  
+                  <PatientEncountersTable
+                    encounters={encounters}
+                    isLoading={isLoadingEncounters}
+                  />
+
                   <SearchBox onSearch={handleSearch} isLoading={isSearching} isPatientPage={true} />
-                  
+
                   <AnimatePresence>
                     {isSearching && (
                       <MotionBox

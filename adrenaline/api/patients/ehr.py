@@ -9,55 +9,43 @@ import polars as pl
 from api.patients.data import Event
 
 
-# Configure logging
+# Configure logging with a consistent format
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+)
 logger = logging.getLogger(__name__)
 
 
 class EHRDataManager:
-    """A class to manage EHR data.
-
-    Attributes
-    ----------
-    lazy_df : Optional[pl.LazyFrame]
-        The lazy DataFrame containing the EHR data.
-    """
+    """A class to manage EHR data using Polars LazyFrames for optimal performance."""
 
     def __init__(self) -> None:
-        """Initialize the EHRDataManager."""
         self.lazy_df: Optional[pl.LazyFrame] = None
+        self._required_columns = {
+            "patient_id",
+            "encounter_id",
+            "code",
+            "description",
+            "timestamp",
+            "numeric_value",
+            "text_value",
+        }
 
     def init_lazy_df(self, directory: str) -> None:
-        """Initialize the lazy DataFrame.
+        """Initialize the LazyFrame with the given directory.
 
         Parameters
         ----------
         directory : str
-            The directory containing the parquet files.
+            The directory containing the MEDS parquet files.
         """
         if self.lazy_df is None:
-            parquet_files = [f for f in os.listdir(directory) if f.endswith(".parquet")]
-            if not parquet_files:
-                logger.error(f"No parquet files found in directory: {directory}")
-                raise ValueError(f"No parquet files found in directory: {directory}")
-
             try:
-                self.lazy_df = pl.scan_parquet(os.path.join(directory, "*.parquet"))
-                # Verify that the required columns exist
-                existing_columns = self.lazy_df.collect_schema().names()
-                required_columns = [
-                    "subject_id",
-                    "hadm_id",
-                    "code",
-                    "description",
-                    "time",
-                    "numeric_value",
-                    "text_value",
-                ]
-                missing_columns = set(required_columns) - set(existing_columns)
-                if missing_columns:
-                    raise ValueError(f"Missing required columns: {missing_columns}")
+                self.lazy_df = pl.scan_parquet(
+                    os.path.join(directory, "*.parquet"), cache=True
+                )
 
-                # Rename columns to match Event dataclass
+                # Ensure consistent column naming
                 self.lazy_df = self.lazy_df.rename(
                     {
                         "subject_id": "patient_id",
@@ -65,13 +53,47 @@ class EHRDataManager:
                         "time": "timestamp",
                     }
                 )
-                logger.info("Lazy DataFrame initialized successfully")
-            except Exception as e:
-                logger.error(f"Error initializing lazy DataFrame: {str(e)}")
+                schema = set(self.lazy_df.collect_schema().names())
+                missing_columns = self._required_columns - schema
+                if missing_columns:
+                    raise ValueError(f"Missing required columns: {missing_columns}")
+
+                logger.info("LazyFrame initialized successfully")
+
+            except Exception:
+                logger.error("LazyFrame initialization failed", exc_info=True)
                 raise
 
+    def _process_event(self, event_data: dict) -> dict:
+        """Process event data to extract event_type, environment, and details."""
+        code_parts = event_data["code"].split("//")
+
+        # Process event_type and environment
+        if len(code_parts) > 1 and code_parts[0] in ["HOSPITAL", "ICU"]:
+            environment = code_parts[0]
+            event_type = code_parts[1]
+        else:
+            environment = None
+            event_type = code_parts[0]
+
+        # Process details based on event type
+        if event_type in ["MEDICATION", "GENDER"]:
+            if event_type == "GENDER":
+                details = code_parts[1]
+            else:
+                details = ", ".join(code_parts[2:])
+        else:
+            details = event_data["description"]
+
+        return {
+            **event_data,
+            "event_type": event_type,
+            "environment": environment,
+            "details": details,
+        }
+
     def fetch_patient_events(self, patient_id: int) -> List[Event]:
-        """Fetch events for a patient.
+        """Fetch all events for a patient.
 
         Parameters
         ----------
@@ -81,145 +103,92 @@ class EHRDataManager:
         Returns
         -------
         List[Event]
-            The events for the patient.
+            List of events for the patient.
         """
         if self.lazy_df is None:
-            raise ValueError("Lazy DataFrame not initialized. Call init_lazy_df first.")
+            raise ValueError("LazyFrame not initialized")
 
         try:
             filtered_df = (
                 self.lazy_df.filter(pl.col("patient_id") == patient_id)
-                .select(
-                    [
-                        "patient_id",
-                        "encounter_id",
-                        "code",
-                        "description",
-                        "timestamp",
-                        "numeric_value",
-                        "text_value",
-                    ]
-                )
-                .collect()
+                .select(list(self._required_columns))
+                .collect(streaming=True)
             )
 
-            return [
-                Event(
-                    patient_id=row["patient_id"],
-                    encounter_id=row["encounter_id"],
-                    code=row["code"],
-                    description=row["description"],
-                    timestamp=row["timestamp"],
-                    numeric_value=row["numeric_value"],
-                    text_value=row["text_value"],
-                )
-                for row in filtered_df.to_dicts()
+            # Process each event
+            processed_events = [
+                self._process_event(row) for row in filtered_df.to_dicts()
             ]
-        except Exception as e:
-            logger.error(f"Error fetching events for patient ID {patient_id}: {str(e)}")
+            return [Event(**event) for event in processed_events]
+        except Exception:
+            logger.error(
+                f"Error fetching events for patient {patient_id}", exc_info=True
+            )
             raise
 
     def fetch_recent_encounter_events(self, patient_id: int) -> List[Event]:
-        """Fetch events from the most recent encounter for a patient.
-
-        Parameters
-        ----------
-        patient_id : int
-            The patient ID.
-
-        Returns
-        -------
-        List[Event]
-            The events from the most recent encounter for the patient.
-        """
+        """Fetch events from most recent encounter with optimized query."""
         if self.lazy_df is None:
-            raise ValueError("Lazy DataFrame not initialized. Call init_lazy_df first.")
+            raise ValueError("LazyFrame not initialized")
 
         try:
-            # First get the most recent encounter ID
-            most_recent_encounter = (
-                self.lazy_df
-                .filter(pl.col("patient_id") == patient_id)
-                .select([
-                    "encounter_id",
-                    "timestamp"
-                ])
+            # Optimize query by combining operations
+            events_df = (
+                self.lazy_df.filter(pl.col("patient_id") == patient_id)
                 .sort("timestamp", descending=True)
-                .unique(subset="encounter_id")
+                .group_by("encounter_id")
+                .agg(
+                    [
+                        pl.first("timestamp").alias("latest_timestamp"),
+                        pl.all().exclude(["timestamp"]),
+                    ]
+                )
                 .limit(1)
-                .collect()
+                .explode(list(self._required_columns - {"timestamp"}))
+                .collect(streaming=True)
             )
 
-            if most_recent_encounter.height == 0:
-                logger.warning(f"No encounters found for patient ID {patient_id}")
+            if events_df.height == 0:
+                logger.info(f"No encounters found for patient {patient_id}")
                 return []
 
-            recent_encounter_id = most_recent_encounter.get_column("encounter_id")[0]
-
-            # Then fetch all events for this encounter
-            filtered_df = (
-                self.lazy_df
-                .filter(
-                    (pl.col("patient_id") == patient_id) & 
-                    (pl.col("encounter_id") == recent_encounter_id)
-                )
-                .select([
-                    "patient_id",
-                    "encounter_id",
-                    "code",
-                    "description",
-                    "timestamp",
-                    "numeric_value",
-                    "text_value"
-                ])
-                .sort("timestamp")
-                .collect()
-            )
-
-            events = [
-                Event(
-                    patient_id=row["patient_id"],
-                    encounter_id=row["encounter_id"],
-                    code=row["code"],
-                    description=row["description"],
-                    timestamp=row["timestamp"],
-                    numeric_value=row["numeric_value"],
-                    text_value=row["text_value"],
-                )
-                for row in filtered_df.to_dicts()
-            ]
-
-            logger.info(
-                f"Retrieved {len(events)} events from most recent encounter "
-                f"{recent_encounter_id} for patient {patient_id}"
-            )
-            return events
-
-        except Exception as e:
+            return [Event(**row) for row in events_df.to_dicts()]
+        except Exception:
             logger.error(
-                f"Error fetching recent encounter events for patient ID {patient_id}: {str(e)}"
+                f"Error fetching recent events for patient {patient_id}", exc_info=True
+            )
+            raise
+
+    def fetch_patient_events_by_type(
+        self, patient_id: int, event_type: str
+    ) -> List[Event]:
+        """Fetch events filtered by event_type for a patient."""
+        if self.lazy_df is None:
+            raise ValueError("LazyFrame not initialized")
+
+        try:
+            filtered_df = (
+                self.lazy_df.filter(pl.col("patient_id") == patient_id)
+                .select(list(self._required_columns))
+                .collect(streaming=True)
+            )
+
+            # Process each event and filter by event_type
+            processed_events = [
+                self._process_event(row)
+                for row in filtered_df.to_dicts()
+                if self._process_event(row)["event_type"] == event_type
+            ]
+            return [Event(**event) for event in processed_events]
+        except Exception:
+            logger.error(
+                f"Error fetching events for patient {patient_id}", exc_info=True
             )
             raise
 
 
-# Create a single instance of EHRDataManager
-ehr_data_manager: EHRDataManager = EHRDataManager()
-
-
-# Use these functions to interact with the EHRDataManager
-def init_lazy_df(directory: str) -> None:
-    """Initialize the lazy DataFrame.
-
-    Parameters
-    ----------
-    directory : str
-        The directory containing the parquet files.
-    """
-    ehr_data_manager.init_lazy_df(directory)
-
-
-def fetch_recent_encounter_events(patient_id: int) -> List[Event]:
-    """Fetch events from the most recent encounter for a patient.
+def fetch_patient_encounters(patient_id: int) -> List[dict]:
+    """Fetch encounters with admission dates for a patient.
 
     Parameters
     ----------
@@ -228,57 +197,83 @@ def fetch_recent_encounter_events(patient_id: int) -> List[Event]:
 
     Returns
     -------
-    List[Event]
-        The events from the most recent encounter for the patient.
-    """
-    return ehr_data_manager.fetch_recent_encounter_events(patient_id)
-
-
-def fetch_patient_events(patient_id: int) -> List[Event]:
-    """Fetch events for a patient.
-
-    Parameters
-    ----------
-    patient_id : int
-        The patient ID.
-
-    Returns
-    -------
-    List[Event]
-        The events for the patient.
-    """
-    return ehr_data_manager.fetch_patient_events(patient_id)
-
-
-def fetch_patient_encounters(patient_id: int) -> List[int]:
-    """Fetch encounters for a patient.
-
-    Parameters
-    ----------
-    patient_id : int
-        The patient ID.
-
-    Returns
-    -------
-    List[int]
-        The encounters for the patient.
+    List[dict]
+        List of encounters with their admission dates.
+        Format: [{"encounter_id": str, "admission_date": str}]
     """
     if ehr_data_manager.lazy_df is None:
         raise ValueError("Lazy DataFrame not initialized. Call init_lazy_df first.")
 
     try:
-        filtered_df = ehr_data_manager.lazy_df.filter(pl.col("patient_id") == patient_id)
-        encounter_ids = (
-            filtered_df
-            .select("encounter_id")
-            .unique()
-            .collect()
-            .get_column("encounter_id")
-            .cast(pl.Utf8)
-            .to_list()
+        # First get all events for the patient
+        filtered_df = (
+            ehr_data_manager.lazy_df.filter(pl.col("patient_id") == patient_id)
+            .select(list(ehr_data_manager._required_columns))
+            .collect(streaming=True)
         )
-        encounter_ids = [str(eid) if eid is not None else "" for eid in encounter_ids]
-        return encounter_ids
-    except Exception as e:
-        logger.error(f"Error fetching encounters for patient ID {patient_id}: {str(e)}")
+
+        if filtered_df.height == 0:
+            logger.info(f"No events found for patient ID {patient_id}")
+            return []
+
+        # Process events to identify hospital admissions
+        encounters = {}
+        for row in filtered_df.to_dicts():
+            processed_event = ehr_data_manager._process_event(row)
+            # Check if this is a hospital admission event
+            if processed_event["event_type"] == "HOSPITAL_ADMISSION":
+                encounter_id = str(processed_event["encounter_id"])
+                timestamp = processed_event["timestamp"]
+
+                # Store only the earliest admission date for each encounter
+                if (
+                    encounter_id not in encounters
+                    or timestamp < encounters[encounter_id]
+                ):
+                    encounters[encounter_id] = timestamp
+
+        # Convert to list of dictionaries and sort by date
+        encounter_list = [
+            {
+                "encounter_id": encounter_id,
+                "admission_date": timestamp.strftime("%Y-%m-%d"),
+            }
+            for encounter_id, timestamp in encounters.items()
+        ]
+
+        # Sort by admission date
+        encounter_list.sort(key=lambda x: x["admission_date"])
+
+        return encounter_list
+
+    except Exception:
+        logger.error(
+            f"Error fetching encounters for patient ID {patient_id}",
+            exc_info=True,
+        )
         raise
+
+
+# Singleton instance
+ehr_data_manager = EHRDataManager()
+
+
+# Public interface functions
+def init_lazy_df(directory: str) -> None:
+    """Initialize the LazyFrame with the given directory."""
+    ehr_data_manager.init_lazy_df(directory)
+
+
+def fetch_recent_encounter_events(patient_id: int) -> List[Event]:
+    """Fetch recent encounter events for a patient."""
+    return ehr_data_manager.fetch_recent_encounter_events(patient_id)
+
+
+def fetch_patient_events(patient_id: int) -> List[Event]:
+    """Fetch all events for a patient."""
+    return ehr_data_manager.fetch_patient_events(patient_id)
+
+
+def fetch_patient_events_by_type(patient_id: int, event_type: str) -> List[Event]:
+    """Fetch events filtered by event_type for a patient."""
+    return ehr_data_manager.fetch_patient_events_by_type(patient_id, event_type)
