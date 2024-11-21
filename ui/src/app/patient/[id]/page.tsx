@@ -17,13 +17,6 @@ import {
   GridItem,
   Progress,
   Heading,
-  Table,
-  Thead,
-  Tbody,
-  Tr,
-  Th,
-  Td,
-  TableContainer
 } from '@chakra-ui/react'
 import { motion, AnimatePresence } from 'framer-motion'
 import Sidebar from '../../components/sidebar'
