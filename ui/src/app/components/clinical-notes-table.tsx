@@ -22,6 +22,11 @@ const ClinicalNotesTable: React.FC<ClinicalNotesTableProps> = ({ notes, patientI
     router.push(`/note/${patientId}/${noteId}`);
   }, [router, patientId]);
 
+  const formatEncounterId = (encounterId: string | number): string => {
+    const numericId = parseInt(encounterId.toString(), 10);
+    return numericId === -1 ? 'N/A' : numericId.toString();
+  };
+
   return (
     <Box overflowX="auto">
       <Table variant="simple" size="sm">
@@ -49,7 +54,7 @@ const ClinicalNotesTable: React.FC<ClinicalNotesTableProps> = ({ notes, patientI
                 </Td>
                 <Td borderColor={tableBorderColor}>
                   <Badge colorScheme="purple">
-                    {note.encounter_id === '-1' ? 'N/A' : note.encounter_id}
+                    {formatEncounterId(note.encounter_id)}
                   </Badge>
                 </Td>
                 <Td borderColor={tableBorderColor}>
