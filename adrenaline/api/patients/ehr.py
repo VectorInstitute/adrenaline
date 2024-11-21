@@ -240,7 +240,7 @@ class EHRDataManager:
                 for event in processed_events
                 if (
                     event["event_type"] == "MEDICATION"
-                    and event["encounter_id"] == latest_encounter
+                    and event["timestamp"] > latest_timestamp
                 )
             }
 

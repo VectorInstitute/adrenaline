@@ -2,7 +2,7 @@
 
 import logging
 from datetime import UTC, datetime
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from bson import ObjectId
 from fastapi import APIRouter, Body, Depends, HTTPException
@@ -32,7 +32,7 @@ class CreatePageRequest(BaseModel):
 @router.post("/pages/create")
 async def create_page(
     request: CreatePageRequest,
-    db: AsyncIOMotorDatabase = Depends(get_database),  # noqa: B008
+    db: AsyncIOMotorDatabase[Any] = Depends(get_database),  # noqa: B008
     current_user: User = Depends(get_current_active_user),  # noqa: B008
 ) -> Dict[str, str]:
     """Create a new page for a user."""
@@ -63,9 +63,9 @@ async def append_to_page(
     page_id: str,
     question: str = Body(...),
     answer: str = Body(...),
-    db: AsyncIOMotorDatabase = Depends(get_database),  # noqa: B008
+    db: AsyncIOMotorDatabase[Any] = Depends(get_database),  # noqa: B008
     current_user: User = Depends(get_current_active_user),  # noqa: B008
-) -> dict:
+) -> Dict[str, str]:
     """Append a follow-up question and answer to an existing page."""
     existing_page = await db.pages.find_one(
         {"_id": ObjectId(page_id), "user_id": str(current_user.id)}
@@ -89,7 +89,7 @@ async def append_to_page(
 
 @router.get("/pages/history", response_model=List[Page])
 async def get_user_page_history(
-    db: AsyncIOMotorDatabase = Depends(get_database),  # noqa: B008
+    db: AsyncIOMotorDatabase[Any] = Depends(get_database),  # noqa: B008
     current_user: User = Depends(get_current_active_user),  # noqa: B008
 ) -> List[Page]:
     """Retrieve all pages for the current user.
@@ -114,7 +114,7 @@ async def get_user_page_history(
 @router.get("/pages/{page_id}", response_model=Page)
 async def get_page(
     page_id: str,
-    db: AsyncIOMotorDatabase = Depends(get_database),  # noqa: B008
+    db: AsyncIOMotorDatabase[Any] = Depends(get_database),  # noqa: B008
     current_user: User = Depends(get_current_active_user),  # noqa: B008
 ) -> Page:
     """Retrieve a specific page.

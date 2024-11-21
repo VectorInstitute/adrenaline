@@ -3,7 +3,7 @@
 import logging
 import os
 from datetime import datetime
-from typing import Dict, List
+from typing import Any, Dict, List
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 from motor.motor_asyncio import AsyncIOMotorDatabase
@@ -109,7 +109,7 @@ async def format_medications(
 @router.post("/generate_answer")
 async def generate_answer_endpoint(
     query: Query = Body(...),  # noqa: B008
-    db: AsyncIOMotorDatabase = Depends(get_database),  # noqa: B008
+    db: AsyncIOMotorDatabase[Any] = Depends(get_database),  # noqa: B008
     current_user: User = Depends(get_current_active_user),  # noqa: B008
 ) -> Dict[str, str]:
     """Generate an answer using RAG."""
