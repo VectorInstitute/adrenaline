@@ -1,3 +1,1 @@
 """EHR workflow functions."""
-
-
