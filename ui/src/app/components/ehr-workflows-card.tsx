@@ -43,12 +43,17 @@ const EHRWorkflowsCard: React.FC<EHRWorkflowsCardProps> = ({ patientId }) => {
       const token = localStorage.getItem('token')
       if (!token) throw new Error('No token found')
 
-      // Fetch medications
+      // Create AbortController with longer timeout
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 300000) // 5 minute timeout
+
+      // Fetch medications with timeout
       const medsResponse = await fetch(`/api/patient_data/${patientId}/medications`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Accept': 'text/plain'
         },
+        signal: controller.signal
       })
 
       if (!medsResponse.ok) {
@@ -63,17 +68,20 @@ const EHRWorkflowsCard: React.FC<EHRWorkflowsCardProps> = ({ patientId }) => {
         return
       }
 
-      // Format medications into table
+      // Format medications with timeout
       const formatResponse = await fetch('/api/format_medications', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
+        signal: controller.signal,
         body: JSON.stringify({
           medications: medications.replace(/^"|"$/g, '')
         }),
       })
+
+      clearTimeout(timeoutId)
 
       if (!formatResponse.ok) {
         const errorText = await formatResponse.text()

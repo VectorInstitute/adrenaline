@@ -1,3 +1,13 @@
+export interface Encounter {
+  encounter_id: string;
+  admission_date: string;
+}
+
+export interface PatientEncountersTableProps {
+  encounters: Encounter[];
+  isLoading: boolean;
+}
+
 export interface ClinicalNote {
     note_id: string;
     encounter_id: string;

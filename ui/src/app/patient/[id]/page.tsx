@@ -200,7 +200,7 @@ const PatientPage: React.FC = () => {
   return (
     <Flex minHeight="100vh" bg={bgColor}>
       <Sidebar />
-      <Box flex={1} ml={{ base: 0, md: 72 }} transition="margin-left 0.3s" p={{ base: 4, md: 6 }}>
+      <Box flex={1} ml={{ base: 0, md: 72 }} transition="margin-left 0.3s" p={{ base: 4, md: 4 }}>
         <Container maxW="container.xl" px={0}>
           <VStack spacing={6} align="stretch" justify="center" minHeight="100vh">
             <Grid templateColumns={{ base: "1fr", md: "1fr 2fr" }} gap={6}>
@@ -225,12 +225,43 @@ const PatientPage: React.FC = () => {
                     )}
                   </MotionBox>
 
-                  <PatientEncountersTable
-                    encounters={encounters}
-                    isLoading={isLoadingEncounters}
-                  />
+                  <MotionBox
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -20 }}
+                    transition={{ duration: 0.5 }}
+                  >
+                  {isLoading ? (
+                      <Skeleton height="200px" />
+                    ) : patientData ? (
+                      <PatientEncountersTable encounters={encounters} />
+                    ) : (
+                      <Card bg={cardBgColor} shadow="md">
+                        <CardBody>
+                          <Text>No patient data found</Text>
+                        </CardBody>
+                      </Card>
+                    )}
+                  </MotionBox>
 
-                  <EHRWorkflowsCard patientId={id} />
+                  <MotionBox
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -20 }}
+                    transition={{ duration: 0.5 }}
+                  >
+                  {isLoading ? (
+                      <Skeleton height="200px" />
+                    ) : patientData ? (
+                      <EHRWorkflowsCard patientId={id} />
+                    ) : (
+                      <Card bg={cardBgColor} shadow="md">
+                        <CardBody>
+                          <Text>No patient data found</Text>
+                        </CardBody>
+                      </Card>
+                    )}
+                  </MotionBox>
 
                   <SearchBox onSearch={handleSearch} isLoading={isSearching} isPatientPage={true} />
 
