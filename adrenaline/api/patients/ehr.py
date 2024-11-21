@@ -186,6 +186,74 @@ class EHRDataManager:
             )
             raise
 
+    def fetch_latest_medications(self, patient_id: int) -> str:
+        """Fetch medication events from the latest encounter and format them.
+
+        Parameters
+        ----------
+        patient_id : int
+            The patient ID.
+
+        Returns
+        -------
+        str
+            Comma-separated list of medications from the latest encounter.
+        """
+        if self.lazy_df is None:
+            raise ValueError("LazyFrame not initialized")
+
+        try:
+            # First get all events for the patient
+            filtered_df = (
+                self.lazy_df.filter(pl.col("patient_id") == patient_id)
+                .select(list(self._required_columns))
+                .collect(streaming=True)
+            )
+
+            if filtered_df.height == 0:
+                logger.info(f"No events found for patient {patient_id}")
+                return ""
+
+            # Process all events first
+            processed_events = [
+                self._process_event(row) for row in filtered_df.to_dicts()
+            ]
+
+            # Find the latest encounter
+            latest_encounter = None
+            latest_timestamp = None
+
+            for event in processed_events:
+                if event["event_type"] == "HOSPITAL_ADMISSION" and (
+                    latest_timestamp is None or event["timestamp"] > latest_timestamp
+                ):
+                    latest_timestamp = event["timestamp"]
+                    latest_encounter = event["encounter_id"]
+
+            if latest_encounter is None:
+                logger.info(f"No hospital admissions found for patient {patient_id}")
+                return ""
+
+            # Filter medications for the latest encounter
+            medications = {
+                event["details"]
+                for event in processed_events
+                if (
+                    event["event_type"] == "MEDICATION"
+                    and event["encounter_id"] == latest_encounter
+                )
+            }
+
+            # Return sorted, comma-separated string
+            return ", ".join(sorted(medications))
+
+        except Exception as e:
+            logger.error(
+                f"Error fetching medications for patient {patient_id}: {str(e)}",
+                exc_info=True,
+            )
+            raise
+
 
 def fetch_patient_encounters(patient_id: int) -> List[dict]:
     """Fetch encounters with admission dates for a patient.
@@ -277,3 +345,8 @@ def fetch_patient_events(patient_id: int) -> List[Event]:
 def fetch_patient_events_by_type(patient_id: int, event_type: str) -> List[Event]:
     """Fetch events filtered by event_type for a patient."""
     return ehr_data_manager.fetch_patient_events_by_type(patient_id, event_type)
+
+
+def fetch_latest_medications(patient_id: int) -> str:
+    """Fetch medication list from the latest encounter."""
+    return ehr_data_manager.fetch_latest_medications(patient_id)

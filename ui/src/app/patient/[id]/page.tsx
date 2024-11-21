@@ -34,6 +34,7 @@ import PatientDetailsCard from '../../components/patient-details-card'
 import PatientEncountersTable from '../../components/patient-encounters-table'
 import SearchBox from '../../components/search-box'
 import AnswerCard from '../../components/answer-card'
+import EHRWorkflowsCard from '../../components/ehr-workflows-card'
 
 const MotionBox = motion(Box)
 
@@ -228,6 +229,8 @@ const PatientPage: React.FC = () => {
                     encounters={encounters}
                     isLoading={isLoadingEncounters}
                   />
+
+                  <EHRWorkflowsCard patientId={id} />
 
                   <SearchBox onSearch={handleSearch} isLoading={isSearching} isPatientPage={true} />
 

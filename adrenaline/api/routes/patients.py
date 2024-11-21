@@ -10,6 +10,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from api.patients.data import ClinicalNote, Event, PatientData, QAPair
 from api.patients.db import get_database
 from api.patients.ehr import (
+    fetch_latest_medications,
     fetch_patient_encounters,
     fetch_patient_events,
     fetch_patient_events_by_type,
@@ -35,6 +36,42 @@ MEDS_DATA_DIR = os.getenv(
 
 # Initialize the lazy DataFrame
 init_lazy_df(MEDS_DATA_DIR)
+
+
+@router.get("/patient_data/{patient_id}/medications", response_model=str)
+async def get_latest_medications(
+    patient_id: int,
+    db: AsyncIOMotorDatabase[Any] = Depends(get_database),  # noqa: B008
+    current_user: User = Depends(get_current_active_user),  # noqa: B008
+) -> str:
+    """Retrieve latest medications for a specific patient.
+
+    Parameters
+    ----------
+    patient_id : int
+        The ID of the patient.
+    db : AsyncIOMotorDatabase
+        The database connection.
+    current_user : User
+        The current authenticated user.
+
+    Returns
+    -------
+    str
+        The latest medications for the patient.
+    """
+    try:
+        medications = fetch_latest_medications(patient_id)
+        logger.info(f"Retrieved medications for patient ID {patient_id} {medications}")
+        return medications
+    except Exception as e:
+        logger.error(
+            f"Error retrieving medications for patient ID {patient_id}: {str(e)}"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while retrieving medications",
+        ) from e
 
 
 @router.get(

@@ -6,6 +6,18 @@ from typing import List, Optional
 from pydantic import BaseModel, Field, field_validator
 
 
+class MedicationsRequest(BaseModel):
+    """Request for formatting medications.
+
+    Attributes
+    ----------
+    medications: str
+        The medications to format.
+    """
+
+    medications: str
+
+
 class CohortSearchQuery(BaseModel):
     """Query for cohort search.
 
