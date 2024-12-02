@@ -2,15 +2,14 @@
 
 import json
 import logging
-import os
 from typing import Tuple
 
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import RunnableSequence
-from langchain_openai import ChatOpenAI
 
 from api.pages.data import Answer
+from api.patients.llm import LLM
 from api.patients.prompts import (
     general_answer_template,
     patient_answer_template,
@@ -21,27 +20,6 @@ from api.patients.prompts import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Set up OpenAI client with custom endpoint
-LLM_SERVICE_URL = os.getenv("LLM_SERVICE_URL")
-if not LLM_SERVICE_URL:
-    raise ValueError("LLM_SERVICE_URL is not set")
-logger.info(f"LLM_SERVICE_URL is set to: {LLM_SERVICE_URL}")
-
-os.environ["OPENAI_API_KEY"] = "EMPTY"
-
-# Initialize LLM with increased timeout
-try:
-    llm = ChatOpenAI(
-        base_url=LLM_SERVICE_URL,
-        model_name="Meta-Llama-3.1-70B-Instruct",
-        temperature=0.3,
-        max_tokens=4096,
-        request_timeout=60,
-    )
-    logger.info("ChatOpenAI initialized successfully")
-except Exception as e:
-    logger.error(f"Error initializing ChatOpenAI: {str(e)}")
-    raise
 
 answer_parser = PydanticOutputParser(pydantic_object=Answer)
 patient_answer_prompt = PromptTemplate(
@@ -54,8 +32,8 @@ general_answer_prompt = PromptTemplate(
 )
 
 # Initialize the LLMChains
-patient_answer_chain = RunnableSequence(patient_answer_prompt | llm)
-general_answer_chain = RunnableSequence(general_answer_prompt | llm)
+patient_answer_chain = RunnableSequence(patient_answer_prompt | LLM)
+general_answer_chain = RunnableSequence(general_answer_prompt | LLM)
 
 
 def parse_llm_output_answer(output: str) -> Tuple[str, str]:
@@ -139,7 +117,7 @@ async def generate_answer(
         raise
 
 
-async def test_llm_connection():
+async def test_llm_connection() -> bool:
     """Test the connection to the LLM.
 
     Returns
@@ -158,12 +136,12 @@ async def test_llm_connection():
         return False
 
 
-async def initialize_llm():
+async def initialize_llm() -> bool:
     """Initialize the LLM.
 
     Returns
     -------
     bool
-        True if the connection is successful, False otherwise.
+        True if the LLM is initialized successfully, False otherwise.
     """
-    await test_llm_connection()
+    return await test_llm_connection()
