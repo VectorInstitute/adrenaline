@@ -1,0 +1,24 @@
+spring:
+  datasource:
+    url: 'jdbc:postgresql://fhir-db-dev:5432/hapi'
+    username: admin
+    password: admin
+    driverClassName: org.postgresql.Driver
+  jpa:
+    properties:
+      hibernate.dialect: ca.uhn.fhir.jpa.model.dialect.HapiFhirPostgresDialect
+      hibernate.search.enabled: false
+
+hapi:
+  fhir:
+    version: R4
+    server_address: 'http://localhost:8080/fhir'
+    allow_external_references: true
+    allow_multiple_delete: true
+    bulk_export_enabled: true
+    tester:
+      home:
+        name: Local Tester
+        server_address: 'http://localhost:8080/fhir'
+        refuse_to_fetch_third_party_urls: false
+        fhir_version: R4

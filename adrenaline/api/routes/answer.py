@@ -3,14 +3,14 @@
 import logging
 import os
 from datetime import datetime
-from typing import Dict, List
+from typing import Any, Dict, List
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from api.pages.data import Query
 from api.patients.answer import generate_answer
-from api.patients.data import CohortSearchQuery, CohortSearchResult
+from api.patients.data import CohortSearchQuery, CohortSearchResult, MedicationsRequest
 from api.patients.db import get_database
 from api.patients.rag import (
     ChromaManager,
@@ -53,10 +53,63 @@ NER_MANAGER = NERManager(NER_SERVICE_URL)
 RAG_MANAGER = RAGManager(EMBEDDING_MANAGER, CHROMA_MANAGER, NER_MANAGER)
 
 
+@router.post("/format_medications")
+async def format_medications(
+    request: MedicationsRequest,
+    current_user: User = Depends(get_current_active_user),  # noqa: B008
+) -> Dict[str, str]:
+    """Format medications into a markdown table.
+
+    Parameters
+    ----------
+    request : MedicationsRequest
+        Request containing medications string
+    current_user : User
+        The current authenticated user
+
+    Returns
+    -------
+    Dict[str, str]
+        Formatted markdown table of medications
+    """
+    try:
+        if not request.medications.strip():
+            return {"formatted_medications": "No medications found"}
+
+        # Prepare the prompt for the LLM
+        prompt = f"""
+        Convert this comma-separated list of medications into a well-formatted markdown table with columns for Medication Name and Status.
+        Sort them alphabetically by medication name. Remove any duplicate entries.
+
+        Medications: {request.medications}
+
+        Format the table like this:
+        | Medication Name | Status |
+        |----------------|---------|
+        | Med 1          | Status 1 |
+        """
+
+        # Generate the formatted table
+        formatted_table = await generate_answer(
+            user_query=prompt,
+            mode="general",
+            context="",
+        )
+
+        return {"formatted_medications": formatted_table[0]}
+
+    except Exception as e:
+        logger.error(f"Error formatting medications: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="An error occurred while formatting medications",
+        ) from e
+
+
 @router.post("/generate_answer")
 async def generate_answer_endpoint(
     query: Query = Body(...),  # noqa: B008
-    db: AsyncIOMotorDatabase = Depends(get_database),  # noqa: B008
+    db: AsyncIOMotorDatabase[Any] = Depends(get_database),  # noqa: B008
     current_user: User = Depends(get_current_active_user),  # noqa: B008
 ) -> Dict[str, str]:
     """Generate an answer using RAG."""
