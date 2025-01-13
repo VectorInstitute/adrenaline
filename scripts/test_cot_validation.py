@@ -304,7 +304,7 @@ async def validate_patient_qa_pairs(
         validation_results = []
         for i, qa_pair in enumerate(patient_data.qa_data):
             console.print(
-                f"[bold green]Validating QA pair {i+1}/{len(patient_data.qa_data)} for patient {patient_id}[/bold green]"
+                f"[bold green]Validating QA pair {i + 1}/{len(patient_data.qa_data)} for patient {patient_id}[/bold green]"
             )
             result = validate_qa_pair(context, qa_pair.question, qa_pair.answer)
             result["patient_id"] = patient_id

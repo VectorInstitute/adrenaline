@@ -27,7 +27,7 @@ async def get_database_statistics():
 
     # Calculate percentages
     def percentage(count):
-        return f"{count} ({count/total_docs*100:.2f}%)"
+        return f"{count} ({count / total_docs * 100:.2f}%)"
 
     # Create a table for output
     table = Table(title="UMLS Database Statistics")

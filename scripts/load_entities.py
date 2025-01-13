@@ -126,7 +126,7 @@ async def process_notes(
         if not recreate and note["entities_exist"]:
             logger.info(f"Skipping note {note['note_id']} as entities already exist")
             progress.update(
-                task, advance=1, description=f"Skipped note {i+1}/{total_notes}"
+                task, advance=1, description=f"Skipped note {i + 1}/{total_notes}"
             )
             continue
 
@@ -136,12 +136,12 @@ async def process_notes(
                 note["patient_id"], note["note_id"], ner_response.entities
             )
             progress.update(
-                task, advance=1, description=f"Processed note {i+1}/{total_notes}"
+                task, advance=1, description=f"Processed note {i + 1}/{total_notes}"
             )
         except Exception as e:
             logger.error(f"Error processing note {note['note_id']}: {str(e)}")
             progress.update(
-                task, advance=1, description=f"Error on note {i+1}/{total_notes}"
+                task, advance=1, description=f"Error on note {i + 1}/{total_notes}"
             )
 
 

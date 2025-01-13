@@ -245,7 +245,7 @@ async def process_concepts(
     )
     if concepts_processed > 0:
         logger.info(
-            f"Average processing time per concept: {total_time/concepts_processed:.4f} seconds"
+            f"Average processing time per concept: {total_time / concepts_processed:.4f} seconds"
         )
 
 
