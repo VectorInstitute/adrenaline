@@ -188,7 +188,7 @@ class RAGManager:
         )
         for i, result in enumerate(filtered_results):
             logger.info(
-                f"Result {i+1}: Distance = {result['distance']}, Matching Entities = {result.get('matching_entities', [])}"
+                f"Result {i + 1}: Distance = {result['distance']}, Matching Entities = {result.get('matching_entities', [])}"
             )
 
         return filtered_results[:top_k]
@@ -255,7 +255,7 @@ async def retrieve_relevant_notes(
         )
         for i, result in enumerate(search_results):
             logger.info(
-                f"Result {i+1}: "
+                f"Result {i + 1}: "
                 f"Note Type: {result['note_type']}, "
                 f"Similarity: {result['distance']:.3f}, "
                 f"Text Length: {len(result['note_text'])} chars"
