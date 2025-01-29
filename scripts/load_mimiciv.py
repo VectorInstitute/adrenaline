@@ -108,7 +108,7 @@ class DatabaseManager:
             if len(operations) >= batch_size or i == total_notes - 1:
                 await self.bulk_upsert_patients(operations)
                 operations = []
-                logger.info(f"Processed {i+1}/{total_notes} notes")
+                logger.info(f"Processed {i + 1}/{total_notes} notes")
 
     async def load_qa_pairs(self, file_path: str) -> None:
         batch_size = 1000
