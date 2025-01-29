@@ -96,7 +96,7 @@ async def create_embeddings(request: EmbeddingRequest) -> Dict[str, List[List[fl
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-def initialize_model():
+def initialize_model() -> None:
     """Initialize the model."""
     global model
     model = load_model()
