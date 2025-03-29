@@ -1,4 +1,7 @@
+"""Test a chain of thought endpoint."""
+
 import os
+from typing import Dict
 from langchain_openai import OpenAI
 from langchain.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
@@ -47,7 +50,7 @@ class Query(BaseModel):
 
 # Define endpoint
 @app.post("/cot")
-async def chain_of_thought(query: Query):
+async def chain_of_thought(query: Query) -> Dict[str, str]:
     try:
         result = chain.invoke({"query": query.text})
 
