@@ -138,9 +138,50 @@ services:
       start_period: 40s
     restart: unless-stopped
 
+  fhir-dev:
+    image: "hapiproject/hapi:latest"
+    ports:
+      - "8087:8080"
+    configs:
+      - source: hapi
+        target: /app/config/application.yaml
+    depends_on:
+      fhir-db-dev:
+        condition: service_healthy
+    networks:
+      - services-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/fhir/metadata"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  fhir-db-dev:
+    image: postgres:17
+    restart: always
+    environment:
+      POSTGRES_PASSWORD: admin
+      POSTGRES_USER: admin
+      POSTGRES_DB: hapi
+    volumes:
+      - hapi_fhir_data:/var/lib/postgresql/data
+    networks:
+      - services-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d hapi"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+configs:
+  hapi:
+    file: ./hapi.application.yaml
+
 volumes:
   mongodb_data:
   chroma_data:
+  hapi_fhir_data:
 
 networks:
   services-network:
