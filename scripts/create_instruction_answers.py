@@ -1,8 +1,8 @@
 """Script to create instruction answers for EHR data."""
 
 import os
-from api.patients.ehr import init_lazy_df, fetch_recent_encounter_events
 
+from api.patients.ehr import fetch_recent_encounter_events, init_lazy_df
 
 MEDS_DATA_DIR = os.getenv(
     "MEDS_DATA_DIR", "/mnt/data/odyssey/meds/hosp/merge_to_MEDS_cohort/train"
