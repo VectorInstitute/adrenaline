@@ -1,7 +1,8 @@
-import requests
-import xml.etree.ElementTree as ET
 import csv
+import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
+
+import requests
 
 
 def fetch_pmc_articles(search_terms, days=7, max_results=100):

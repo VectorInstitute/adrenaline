@@ -1,8 +1,9 @@
 import os
-from langchain_openai import OpenAI
+
+from fastapi import FastAPI, HTTPException
 from langchain.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from fastapi import FastAPI, HTTPException
+from langchain_openai import OpenAI
 from pydantic import BaseModel
 
 # Set up FastAPI
