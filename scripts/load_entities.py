@@ -1,16 +1,16 @@
+import argparse
 import asyncio
 import logging
-from typing import Any, List, Dict
 from datetime import datetime
-import argparse
+from typing import Any
 
 import httpx
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
-from pymongo import IndexModel, ASCENDING, TEXT
+from pydantic import BaseModel
+from pymongo import ASCENDING, TEXT, IndexModel
 from rich.console import Console
 from rich.logging import RichHandler
 from rich.progress import Progress, TaskID
-from pydantic import BaseModel
 
 # Configure logging with rich
 logging.basicConfig(
@@ -34,25 +34,25 @@ NER_SERVICE_TIMEOUT = 300  # 5 minutes
 class Entity(BaseModel):
     pretty_name: str
     cui: str
-    type_ids: List[str]
-    types: List[str]
+    type_ids: list[str]
+    types: list[str]
     source_value: str
     detected_name: str
     acc: float
     context_similarity: float
     start: int
     end: int
-    icd10: List[Dict[str, str]]
-    ontologies: List[str]
-    snomed: List[str]
+    icd10: list[dict[str, str]]
+    ontologies: list[str]
+    snomed: list[str]
     id: int
-    meta_anns: Dict[str, Any]
+    meta_anns: dict[str, Any]
 
 
 class NERResponse(BaseModel):
     note_id: str
     text: str
-    entities: List[Entity]
+    entities: list[Entity]
 
 
 class DatabaseManager:
@@ -71,7 +71,7 @@ class DatabaseManager:
         ]
         await self.patients_collection.create_indexes(indexes)
 
-    async def get_all_notes(self) -> List[Dict[str, Any]]:
+    async def get_all_notes(self) -> list[dict[str, Any]]:
         cursor = self.patients_collection.aggregate(
             [
                 {"$unwind": "$notes"},
@@ -88,7 +88,7 @@ class DatabaseManager:
         return await cursor.to_list(length=None)
 
     async def update_note_with_entities(
-        self, patient_id: int, note_id: str, entities: List[Entity]
+        self, patient_id: int, note_id: str, entities: list[Entity]
     ) -> None:
         await self.patients_collection.update_one(
             {"patient_id": patient_id, "notes.note_id": note_id},
@@ -139,7 +139,7 @@ async def process_notes(
                 task, advance=1, description=f"Processed note {i + 1}/{total_notes}"
             )
         except Exception as e:
-            logger.error(f"Error processing note {note['note_id']}: {str(e)}")
+            logger.error(f"Error processing note {note['note_id']}: {e!s}")
             progress.update(
                 task, advance=1, description=f"Error on note {i + 1}/{total_notes}"
             )
