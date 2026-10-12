@@ -1,11 +1,11 @@
 import asyncio
-from typing import List
+import warnings
+
 import torch
+import uvicorn
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from transformers import AutoTokenizer, AutoModel, AutoConfig
-import uvicorn
-import warnings
+from transformers import AutoConfig, AutoModel, AutoTokenizer
 
 # Suppress the FutureWarning about clean_up_tokenization_spaces
 warnings.filterwarnings(
@@ -29,11 +29,11 @@ BATCH_SIZE = 8
 
 # Pydantic models for request and response
 class EmbeddingRequest(BaseModel):
-    texts: List[str]
+    texts: list[str]
 
 
 class EmbeddingResponse(BaseModel):
-    embeddings: List[List[float]]
+    embeddings: list[list[float]]
 
 
 # Load model across both GPUs
@@ -53,7 +53,7 @@ print(f"Model loaded on device: {next(model.parameters()).device}")
 
 # Function to get embeddings
 @torch.no_grad()
-def get_embeddings(texts: List[str]) -> List[List[float]]:
+def get_embeddings(texts: list[str]) -> list[list[float]]:
     # Tokenize inputs
     inputs = tokenizer(
         texts, padding=True, truncation=True, return_tensors="pt", max_length=MAX_LENGTH
@@ -83,7 +83,7 @@ def mean_pooling(token_embeddings, attention_mask):
 
 
 # Async function to process batches
-async def process_batch(batch: List[str]) -> List[List[float]]:
+async def process_batch(batch: list[str]) -> list[list[float]]:
     return await asyncio.get_event_loop().run_in_executor(None, get_embeddings, batch)
 
 
