@@ -1,27 +1,28 @@
 """Script to load note embeddings into ChromaDB."""
 
+import argparse
 import asyncio
 import logging
-from typing import List, Dict, Any
-import argparse
+import sys
+import time
 from datetime import datetime
+from typing import Any
+
+import httpx
+import pandas as pd
 from motor.motor_asyncio import (
     AsyncIOMotorClient,
-    AsyncIOMotorDatabase,
     AsyncIOMotorCollection,
+    AsyncIOMotorDatabase,
 )
-import httpx
-import time
-import pandas as pd
-from tqdm.asyncio import tqdm
+from pymongo import ASCENDING
 from tenacity import (
     retry,
+    retry_if_exception_type,
     stop_after_attempt,
     wait_exponential,
-    retry_if_exception_type,
 )
-import sys
-from pymongo import ASCENDING
+from tqdm.asyncio import tqdm
 
 try:
     import pysqlite3  # noqa: F401
@@ -95,7 +96,7 @@ class DatabaseManager:
 
     async def get_patients_batch(
         self, skip: int, limit: int, query: dict
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """Fetch a batch of patients from MongoDB."""
         try:
             cursor = self.patients_collection.find(query).skip(skip).limit(limit)
@@ -123,7 +124,7 @@ class EmbeddingManager:
         wait=wait_exponential(multiplier=1, max=10),
         retry=retry_if_exception_type((httpx.HTTPStatusError, httpx.RequestError)),
     )
-    async def get_embeddings(self, texts: List[str]) -> List[List[float]]:
+    async def get_embeddings(self, texts: list[str]) -> list[list[float]]:
         """Get embeddings for a list of texts."""
         try:
             response = await self.client.post(
@@ -203,13 +204,13 @@ class ChromaManager:
 
     def insert_vectors(
         self,
-        patient_ids: List[int],
-        note_ids: List[str],
-        embeddings: List[List[float]],
-        note_texts: List[str],
-        note_types: List[str],
-        timestamps: List[int],
-        encounter_ids: List[int],
+        patient_ids: list[int],
+        note_ids: list[str],
+        embeddings: list[list[float]],
+        note_texts: list[str],
+        note_types: list[str],
+        timestamps: list[int],
+        encounter_ids: list[int],
     ):
         """Insert vectors and metadata into ChromaDB."""
         try:
@@ -245,7 +246,7 @@ class ChromaManager:
 
 async def process_batch(
     patient_id: int,
-    batch_notes: List[Dict],
+    batch_notes: list[dict],
     chroma_manager: ChromaManager,
     embedding_manager: EmbeddingManager,
 ) -> int:

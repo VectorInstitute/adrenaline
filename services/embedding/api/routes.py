@@ -2,13 +2,11 @@
 
 import logging
 import os
-from typing import Dict, List
 
 import torch
+from api.embeddings.data import EmbeddingRequest, EmbeddingResponse
 from fastapi import APIRouter, HTTPException
 from sentence_transformers import SentenceTransformer
-
-from api.embeddings.data import EmbeddingRequest, EmbeddingResponse
 
 # Increase batch size
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "32"))
@@ -41,7 +39,7 @@ model = None
 
 
 @torch.no_grad()
-def process_batch(texts: List[str]) -> List[List[float]]:
+def process_batch(texts: list[str]) -> list[list[float]]:
     """Process a batch of texts.
 
     Parameters
@@ -67,7 +65,7 @@ def process_batch(texts: List[str]) -> List[List[float]]:
 
 
 @router.post("/embeddings", response_model=EmbeddingResponse)
-async def create_embeddings(request: EmbeddingRequest) -> Dict[str, List[List[float]]]:
+async def create_embeddings(request: EmbeddingRequest) -> dict[str, list[list[float]]]:
     """Create embeddings for a list of texts.
 
     Parameters

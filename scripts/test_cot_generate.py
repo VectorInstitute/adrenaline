@@ -1,11 +1,11 @@
 import asyncio
 import logging
-from typing import List, Dict
+
 import httpx
 from rich.console import Console
 from rich.panel import Panel
-from rich.tree import Tree
 from rich.text import Text
+from rich.tree import Tree
 
 # Configure logging
 logging.basicConfig(
@@ -44,7 +44,7 @@ async def get_auth_token() -> str:
 
 async def generate_cot_steps(
     query: str, auth_token: str, patient_id: str = None
-) -> List[Dict[str, str]]:
+) -> list[dict[str, str]]:
     """Generate the steps for a COT prompt."""
     try:
         logger.info("Generating CoT steps...")
@@ -102,7 +102,7 @@ async def generate_cot_answer(
         raise
 
 
-def display_cot_steps(query: str, steps: List[Dict[str, str]], patient_id: str = None):
+def display_cot_steps(query: str, steps: list[dict[str, str]], patient_id: str = None):
     """Display the CoT steps using Rich."""
     title = f"[bold magenta]Query:[/bold magenta] {query}"
     if patient_id:

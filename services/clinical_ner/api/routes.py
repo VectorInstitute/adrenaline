@@ -2,14 +2,12 @@
 
 import logging
 import os
-from typing import Any, Dict
+from typing import Any
 
 import spacy
+from api.entities.data import Entity, MetaAnnotation, NERResponse
 from fastapi import APIRouter, Body, HTTPException, status
 from medcat.cat import CAT
-
-from api.entities.data import Entity, MetaAnnotation, NERResponse
-
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -55,7 +53,7 @@ def load_medcat_model() -> CAT:
 
         return CAT.load_model_pack(model_path)
     except Exception as e:
-        logger.error(f"Failed to load MedCAT model: {str(e)}")
+        logger.error(f"Failed to load MedCAT model: {e!s}")
         raise
 
 
@@ -63,11 +61,11 @@ def load_medcat_model() -> CAT:
 try:
     cat = load_medcat_model()
 except Exception as e:
-    logger.error(f"Failed to initialize MedCAT: {str(e)}")
+    logger.error(f"Failed to initialize MedCAT: {e!s}")
     cat = None
 
 
-def process_entity(entity: Dict[str, Any]) -> Entity:
+def process_entity(entity: dict[str, Any]) -> Entity:
     """
     Process an entity from MedCAT.
 
@@ -139,8 +137,8 @@ async def extract_entities(text: str = Body(..., embed=True)) -> NERResponse:
         return NERResponse(text=text, entities=medcat_entities)
 
     except Exception as e:
-        logger.error(f"Unexpected error in extract_entities: {str(e)}", exc_info=True)
+        logger.error(f"Unexpected error in extract_entities: {e!s}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"An unexpected error occurred: {str(e)}",
+            detail=f"An unexpected error occurred: {e!s}",
         ) from e

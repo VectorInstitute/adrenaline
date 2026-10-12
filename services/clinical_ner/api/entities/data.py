@@ -1,7 +1,5 @@
 """NER service data models."""
 
-from typing import Dict, List
-
 from pydantic import BaseModel
 
 
@@ -64,19 +62,19 @@ class Entity(BaseModel):
 
     pretty_name: str
     cui: str
-    type_ids: List[str]
-    types: List[str]
+    type_ids: list[str]
+    types: list[str]
     source_value: str
     detected_name: str
     acc: float
     context_similarity: float
     start: int
     end: int
-    icd10: List[Dict[str, str]]
-    ontologies: List[str]
-    snomed: List[str]
+    icd10: list[dict[str, str]]
+    ontologies: list[str]
+    snomed: list[str]
     id: int
-    meta_anns: Dict[str, MetaAnnotation]
+    meta_anns: dict[str, MetaAnnotation]
 
 
 class NERResponse(BaseModel):
@@ -92,4 +90,4 @@ class NERResponse(BaseModel):
     """
 
     text: str
-    entities: List[Entity]
+    entities: list[Entity]
