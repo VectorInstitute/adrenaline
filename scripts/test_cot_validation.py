@@ -2,23 +2,24 @@
 This script validates QA pairs for all patients with QA data, using a structured chain-of-thought reasoning approach.
 """
 
-import os
-import re
 import asyncio
 import json
 import logging
-from typing import List, Dict, Any
+import os
+import re
+from typing import Any
+
+import backoff
 import requests
-from pydantic import BaseModel, Field
+from motor.motor_asyncio import AsyncIOMotorClient
 from openai import OpenAI
+from pydantic import BaseModel, Field
+from rich import box
+from rich.columns import Columns
 from rich.console import Console
 from rich.panel import Panel
-from rich import box
-from rich.text import Text
 from rich.syntax import Syntax
-from rich.columns import Columns
-import backoff
-from motor.motor_asyncio import AsyncIOMotorClient
+from rich.text import Text
 
 # Configure logging
 logging.basicConfig(
@@ -62,8 +63,8 @@ class ClinicalNote(BaseModel):
 
 class PatientData(BaseModel):
     patient_id: int
-    notes: List[ClinicalNote]
-    qa_data: List[QAPair] = Field(default_factory=list)
+    notes: list[ClinicalNote]
+    qa_data: list[QAPair] = Field(default_factory=list)
 
 
 class ReasoningStep(BaseModel):
@@ -73,7 +74,7 @@ class ReasoningStep(BaseModel):
 
 class ValidationResult(BaseModel):
     is_correct: bool
-    reasoning: List[ReasoningStep]
+    reasoning: list[ReasoningStep]
     correct_answer: str = ""
 
 
@@ -149,7 +150,7 @@ def send_chat_prompt(
         raise
 
 
-def construct_json_from_text(text: str) -> Dict[str, Any]:
+def construct_json_from_text(text: str) -> dict[str, Any]:
     """Attempt to construct a JSON object from unstructured text."""
     constructed_json = {}
 
@@ -181,7 +182,7 @@ def construct_json_from_text(text: str) -> Dict[str, Any]:
     return constructed_json if len(constructed_json) >= 2 else {}
 
 
-def extract_json_from_response(response: str) -> Dict[str, Any]:
+def extract_json_from_response(response: str) -> dict[str, Any]:
     """Extract and parse JSON from the LLM response."""
     try:
         # First, try to parse the entire response as JSON
@@ -206,7 +207,7 @@ def extract_json_from_response(response: str) -> Dict[str, Any]:
         raise ValueError("No valid JSON found in LLM response")
 
 
-def validate_qa_pair(context: str, question: str, answer: str) -> Dict[str, Any]:
+def validate_qa_pair(context: str, question: str, answer: str) -> dict[str, Any]:
     """Validate a QA pair using structured chain-of-thought reasoning."""
     try:
         logger.info(f"Validating QA pair - Question: {question[:50]}...")
@@ -283,7 +284,7 @@ def validate_qa_pair(context: str, question: str, answer: str) -> Dict[str, Any]
             "question": question,
             "given_answer": answer,
             "is_correct": False,
-            "reasoning": [f"Error occurred during validation: {str(e)}"],
+            "reasoning": [f"Error occurred during validation: {e!s}"],
             "correct_answer": "Unable to determine",
         }
 
@@ -291,7 +292,7 @@ def validate_qa_pair(context: str, question: str, answer: str) -> Dict[str, Any]
 # Main Validation Pipeline
 async def validate_patient_qa_pairs(
     patient_id: int, auth_token: str
-) -> List[Dict[str, str]]:
+) -> list[dict[str, str]]:
     """Validate all QA pairs for a given patient."""
     try:
         logger.info(f"Starting validation for patient {patient_id}")
@@ -317,7 +318,7 @@ async def validate_patient_qa_pairs(
         raise
 
 
-async def get_patients_with_qa_pairs() -> List[int]:
+async def get_patients_with_qa_pairs() -> list[int]:
     """Fetch all patients that have QA pairs."""
     logger.info("Fetching patients with QA pairs")
     cursor = patients_collection.find(
@@ -328,7 +329,7 @@ async def get_patients_with_qa_pairs() -> List[int]:
     return patients
 
 
-def save_results(results: List[Dict[str, str]]):
+def save_results(results: list[dict[str, str]]):
     """Save validation results to a JSON file."""
     logger.info(f"Saving validation results to {RESULTS_FILE}")
     with open(RESULTS_FILE, "w") as f:
@@ -336,7 +337,7 @@ def save_results(results: List[Dict[str, str]]):
     logger.info("Results saved successfully")
 
 
-def load_results() -> List[Dict[str, str]]:
+def load_results() -> list[dict[str, str]]:
     """Load validation results from a JSON file."""
     if os.path.exists(RESULTS_FILE):
         logger.info(f"Loading existing results from {RESULTS_FILE}")
@@ -355,7 +356,7 @@ async def run_validation() -> None:
         total_patients = len(patients_with_qa)
 
         all_results = load_results()
-        results_by_patient: Dict[int, List[Dict[str, Any]]] = {}
+        results_by_patient: dict[int, list[dict[str, Any]]] = {}
         for result in all_results:
             patient_id = result["patient_id"]
             if patient_id not in results_by_patient:

@@ -1,19 +1,20 @@
 """Load UMLS data into MongoDB for RAG system."""
 
-import os
 import asyncio
-from typing import Any, Dict, List
+import logging
+import os
+from typing import Any
+
 from motor.motor_asyncio import (
     AsyncIOMotorClient,
-    AsyncIOMotorDatabase,
     AsyncIOMotorCollection,
+    AsyncIOMotorDatabase,
 )
-from pymongo import UpdateOne, IndexModel, ASCENDING
+from pymongo import ASCENDING, IndexModel, UpdateOne
 from pymongo.errors import BulkWriteError
 from rich.console import Console
-from rich.progress import Progress, TaskID
 from rich.logging import RichHandler
-import logging
+from rich.progress import Progress, TaskID
 
 # Configure logging with rich
 logging.basicConfig(
@@ -45,7 +46,7 @@ class UMLSDatabaseManager:
         ]
         await self.umls_collection.create_indexes(indexes)
 
-    async def bulk_upsert_concepts(self, operations: List[UpdateOne]) -> None:
+    async def bulk_upsert_concepts(self, operations: list[UpdateOne]) -> None:
         try:
             result = await self.umls_collection.bulk_write(operations, ordered=False)
             logger.info(
@@ -60,7 +61,7 @@ class UMLSDatabaseManager:
 
 def read_mrconso(
     file_path: str, progress: Progress, task: TaskID
-) -> Dict[str, Dict[str, Any]]:
+) -> dict[str, dict[str, Any]]:
     concepts = {}
     total_lines = sum(1 for _ in open(file_path, "r", encoding="utf-8"))
     progress.update(task, total=total_lines)
@@ -123,7 +124,7 @@ def read_mrconso(
 
 def read_mrdef(
     file_path: str,
-    concepts: Dict[str, Dict[str, Any]],
+    concepts: dict[str, dict[str, Any]],
     progress: Progress,
     task: TaskID,
 ) -> None:
@@ -147,7 +148,7 @@ def read_mrdef(
 
 def read_mrsat(
     file_path: str,
-    concepts: Dict[str, Dict[str, Any]],
+    concepts: dict[str, dict[str, Any]],
     progress: Progress,
     task: TaskID,
 ) -> None:
@@ -187,7 +188,7 @@ def read_mrsat(
 
 def read_mrsty(
     file_path: str,
-    concepts: Dict[str, Dict[str, Any]],
+    concepts: dict[str, dict[str, Any]],
     progress: Progress,
     task: TaskID,
 ) -> None:
@@ -209,7 +210,7 @@ def read_mrsty(
             progress.update(task, advance=1)
 
 
-def process_concepts(concepts: Dict[str, Dict[str, Any]]) -> None:
+def process_concepts(concepts: dict[str, dict[str, Any]]) -> None:
     for concept in concepts.values():
         concept["synonyms"] = list(concept["synonyms"])
         concept["semantic_types"] = list(concept["semantic_types"])
@@ -244,7 +245,7 @@ def process_concepts(concepts: Dict[str, Dict[str, Any]]) -> None:
 
 async def process_umls_data(
     db_manager: UMLSDatabaseManager,
-    concepts: Dict[str, Dict[str, Any]],
+    concepts: dict[str, dict[str, Any]],
     progress: Progress,
     task: TaskID,
 ) -> None:
