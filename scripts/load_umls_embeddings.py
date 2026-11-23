@@ -1,25 +1,25 @@
+import argparse
 import asyncio
 import logging
-from typing import List, Dict
-import argparse
+import time
+
+import httpx
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymilvus import (
-    connections,
     Collection,
-    FieldSchema,
     CollectionSchema,
     DataType,
+    FieldSchema,
+    connections,
     utility,
 )
-import httpx
-import time
-from tqdm.asyncio import tqdm
 from tenacity import (
     retry,
+    retry_if_exception_type,
     stop_after_attempt,
     wait_exponential,
-    retry_if_exception_type,
 )
+from tqdm.asyncio import tqdm
 
 # Configuration
 MONGO_URI = "mongodb://root:password@localhost:27017"
@@ -54,7 +54,7 @@ class EmbeddingManager:
         wait=wait_exponential(multiplier=1, max=10),
         retry=retry_if_exception_type((httpx.HTTPStatusError, httpx.RequestError)),
     )
-    async def get_embeddings(self, texts: List[str]) -> List[List[float]]:
+    async def get_embeddings(self, texts: list[str]) -> list[list[float]]:
         try:
             logger.info(f"Sending request to embedding service with {len(texts)} texts")
             response = await self.client.post(
@@ -129,9 +129,9 @@ class MilvusManager:
 
     def insert_vectors(
         self,
-        cuis: List[str],
-        preferred_terms: List[str],
-        embeddings: List[List[float]],
+        cuis: list[str],
+        preferred_terms: list[str],
+        embeddings: list[list[float]],
     ):
         try:
             entities = [
@@ -157,7 +157,7 @@ class MilvusManager:
 
 
 async def process_batch(
-    batch_concepts: List[Dict],
+    batch_concepts: list[dict],
     milvus_manager: MilvusManager,
     embedding_manager: EmbeddingManager,
 ) -> int:

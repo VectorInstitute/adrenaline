@@ -2,22 +2,23 @@
 This script loads the MIMIC-IV notes and QA pairs into a MongoDB database.
 """
 
-import os
 import asyncio
-import logging
-import time
-from typing import Any, List
-from enum import Enum
 import json
+import logging
+import os
+import time
+from enum import Enum
+from pathlib import Path
+from typing import Any
+
 import pandas as pd
 from motor.motor_asyncio import (
     AsyncIOMotorClient,
-    AsyncIOMotorDatabase,
     AsyncIOMotorCollection,
+    AsyncIOMotorDatabase,
 )
-from pymongo import UpdateOne, IndexModel, ASCENDING
+from pymongo import ASCENDING, IndexModel, UpdateOne
 from pymongo.errors import BulkWriteError
-from pathlib import Path
 
 # Configure logging
 logging.basicConfig(
@@ -67,7 +68,7 @@ class DatabaseManager:
         ]
         await self.patients_collection.create_indexes(indexes)
 
-    async def bulk_upsert_patients(self, operations: List[UpdateOne]) -> None:
+    async def bulk_upsert_patients(self, operations: list[UpdateOne]) -> None:
         try:
             result = await self.patients_collection.bulk_write(
                 operations, ordered=False
@@ -165,7 +166,7 @@ async def main() -> None:
         await db_manager.load_qa_pairs(ehrnoteqa_file_path)
 
     except Exception as e:
-        logger.error(f"An error occurred during data loading: {str(e)}")
+        logger.error(f"An error occurred during data loading: {e!s}")
         raise
 
     end_time = time.time()
