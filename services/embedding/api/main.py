@@ -1,11 +1,8 @@
 """Embedding Service main application."""
 
-from typing import Dict
-
+from api.routes import initialize_model, router
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
-from api.routes import router, initialize_model
 
 # Initialize the model before creating the FastAPI app
 initialize_model()
@@ -24,6 +21,6 @@ app.include_router(router)
 
 
 @app.get("/health")
-async def health() -> Dict[str, str]:
+async def health() -> dict[str, str]:
     """Health check endpoint."""
     return {"status": "OK"}

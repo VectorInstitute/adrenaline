@@ -1,8 +1,9 @@
+from typing import Any
+
+import backoff
 from openai import OpenAI
 from rich.console import Console
 from rich.panel import Panel
-import backoff
-from typing import Any
 
 # Set the base URL for the API
 BASE_URL = "http://localhost:8080/v1"

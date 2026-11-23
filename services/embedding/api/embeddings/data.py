@@ -1,7 +1,5 @@
 """Embedding Service data models."""
 
-from typing import List
-
 from pydantic import BaseModel
 
 
@@ -14,7 +12,7 @@ class EmbeddingRequest(BaseModel):
         The texts to embed.
     """
 
-    texts: List[str]
+    texts: list[str]
 
 
 class EmbeddingResponse(BaseModel):
@@ -26,4 +24,4 @@ class EmbeddingResponse(BaseModel):
         The embeddings of the texts.
     """
 
-    embeddings: List[List[float]]
+    embeddings: list[list[float]]
